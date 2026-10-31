@@ -549,3 +549,151 @@ tbody tr:hover {
     }
 
 }
+
+/* =====================================
+   SUBSCRIPTION MANAGEMENT
+===================================== */
+
+.subscription-form-section,
+.subscription-table-section {
+    background: white;
+    padding: 28px;
+    border-radius: 12px;
+    margin-top: 25px;
+    box-shadow: 0 3px 12px #00000008;
+}
+
+.subscription-form-section .section-heading,
+.subscription-table-section .section-heading {
+    margin-bottom: 24px;
+}
+
+.subscription-form-section .section-heading p,
+.subscription-table-section .section-heading p {
+    color: #64748b;
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.subscription-form-section select,
+.subscription-form-section input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+    background: white;
+    font-size: 14px;
+    outline: none;
+}
+
+.subscription-form-section input:focus,
+.subscription-form-section select:focus {
+    border-color: #2563eb;
+}
+
+.subscription-form-section small {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.subscription-note {
+    background: #eff6ff;
+    color: #1e40af;
+    padding: 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 22px;
+    line-height: 1.6;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-draft {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.status-quotation {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.status-confirmed {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-paused {
+    background: #ffedd5;
+    color: #9a3412;
+}
+
+.status-closed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.subscription-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 115px;
+}
+
+.small-action-button,
+.small-danger-button {
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.small-action-button {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.small-action-button:hover {
+    background: #bfdbfe;
+}
+
+.small-danger-button {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.small-danger-button:hover {
+    background: #fecaca;
+}
+
+.subscription-table-section table {
+    min-width: 1000px;
+}
+
+@media (max-width: 700px) {
+
+    .subscription-form-section,
+    .subscription-table-section {
+        padding: 18px;
+    }
+
+    .subscription-actions {
+        min-width: 100px;
+    }
+
+}
