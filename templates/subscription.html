@@ -581,7 +581,7 @@
 
                                     {% if subscription["status"] in ["Active", "Paused"] %}
 
-                                        {% if subscription["allow_early_close"] %}
+                                        {% if subscription["allow_early_close"] or subscription["expiry_date"] <= today %}
 
                                         <form method="POST"
                                               action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
