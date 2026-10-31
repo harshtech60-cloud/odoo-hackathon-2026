@@ -1,13 +1,14 @@
 from flask import Flask, render_template, request, redirect, url_for
+from database import get_db_connection, init_db
 import sqlite3
 import re
-
-from database import get_db_connection, init_db
 
 app = Flask(__name__)
 
 
-# ---------------- DASHBOARD ----------------
+# =====================================
+# DASHBOARD
+# =====================================
 
 @app.route("/")
 def dashboard():
@@ -28,17 +29,17 @@ def dashboard():
     )
 
 
-# ---------------- CUSTOMER MANAGEMENT ----------------
+# =====================================
+# CUSTOMER MANAGEMENT
+# =====================================
 
 @app.route("/customers", methods=["GET", "POST"])
 def customers():
 
-    search = request.args.get("q", "").strip()
-
     message = None
     error = None
 
-    # Handle the customer form submission
+    # Handle customer registration
     if request.method == "POST":
 
         name = request.form.get("name", "").strip()
@@ -48,9 +49,11 @@ def customers():
 
         # Validate required fields
         if not name or not email:
+
             error = "Customer name and email are required."
 
         elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+
             error = "Please enter a valid email address."
 
         else:
@@ -69,7 +72,7 @@ def customers():
 
             except sqlite3.IntegrityError:
 
-                error = "A customer with this email already exists."
+                error = "This customer email already exists."
 
             finally:
                 connection.close()
@@ -77,11 +80,13 @@ def customers():
             if error is None:
                 return redirect(url_for("customers", added="1"))
 
-    # Display a success message after saving
+    # Success message after registration
     if request.args.get("added") == "1":
         message = "Customer added successfully!"
 
-    # Get customer records
+    # Retrieve customers
+    search = request.args.get("q", "").strip()
+
     connection = get_db_connection()
 
     try:
@@ -93,8 +98,8 @@ def customers():
             customer_list = connection.execute("""
                 SELECT * FROM customers
                 WHERE name LIKE ?
-                   OR email LIKE ?
-                   OR company LIKE ?
+                OR email LIKE ?
+                OR company LIKE ?
                 ORDER BY id DESC
             """, (keyword, keyword, keyword)).fetchall()
 
@@ -117,7 +122,9 @@ def customers():
     )
 
 
-# ---------------- START APPLICATION ----------------
+# =====================================
+# START APPLICATION
+# =====================================
 
 if __name__ == "__main__":
 
