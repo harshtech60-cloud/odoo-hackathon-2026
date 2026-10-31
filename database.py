@@ -190,6 +190,105 @@ connection.execute("""
 
     )
 """)
+# =====================================
+# INVOICES TABLE
+# =====================================
+
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS invoices (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        invoice_number TEXT UNIQUE,
+
+        subscription_id INTEGER NOT NULL,
+
+        customer_id INTEGER NOT NULL,
+
+        billing_period_start TEXT NOT NULL,
+
+        billing_period_end TEXT NOT NULL,
+
+        invoice_date TEXT NOT NULL,
+
+        due_date TEXT NOT NULL,
+
+        subtotal REAL NOT NULL DEFAULT 0,
+
+        tax_amount REAL NOT NULL DEFAULT 0,
+
+        total_amount REAL NOT NULL DEFAULT 0,
+
+        status TEXT NOT NULL DEFAULT 'Draft'
+            CHECK(status IN (
+                'Draft',
+                'Confirmed',
+                'Paid',
+                'Cancelled'
+            )),
+
+        sent_at TEXT,
+
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (subscription_id)
+            REFERENCES subscriptions(id),
+
+        FOREIGN KEY (customer_id)
+            REFERENCES customers(id),
+
+        UNIQUE(subscription_id, billing_period_start)
+
+    )
+""")
+
+
+# =====================================
+# INVOICE LINE ITEMS TABLE
+# =====================================
+
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS invoice_lines (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        invoice_id INTEGER NOT NULL,
+
+        description TEXT NOT NULL,
+
+        quantity REAL NOT NULL,
+
+        unit_price REAL NOT NULL,
+
+        tax_rate REAL NOT NULL DEFAULT 0,
+
+        line_subtotal REAL NOT NULL,
+
+        tax_amount REAL NOT NULL,
+
+        line_total REAL NOT NULL,
+
+        FOREIGN KEY (invoice_id)
+            REFERENCES invoices(id)
+            ON DELETE CASCADE
+
+    )
+""")
+# Indexes for faster invoice searches
+connection.execute("""
+    CREATE INDEX IF NOT EXISTS idx_invoices_customer
+    ON invoices(customer_id)
+""")
+
+connection.execute("""
+    CREATE INDEX IF NOT EXISTS idx_invoices_status
+    ON invoices(status)
+""")
+
+connection.execute("""
+    CREATE INDEX IF NOT EXISTS idx_invoices_due_date
+    ON invoices(due_date)
+""")
         connection.commit()
 
     finally:
