@@ -1,0 +1,711 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brightloop | Subscriptions</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <h2>BRIGHTLOOP</h2>
+            <p>Subscription Manager</p>
+        </div>
+
+        <nav>
+
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+
+            <a href="{{ url_for('customers') }}">Customers</a>
+
+            <a href="{{ url_for('products') }}">Products</a>
+
+            <a href="{{ url_for('plans') }}">Plans</a>
+
+            <a class="active"
+               href="{{ url_for('subscriptions') }}">
+                Subscriptions
+            </a>
+
+            <a href="#">Invoices</a>
+
+            <a href="#">Payments</a>
+
+            <a href="#">Discounts</a>
+
+            <a href="#">Reports</a>
+
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Odoo × FLUX Hackathon</p>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div>
+                <h1>Subscription Management</h1>
+                <p>Create and manage customer subscriptions.</p>
+            </div>
+
+            <a href="{{ url_for('dashboard') }}" class="back-link">
+                ← Dashboard
+            </a>
+
+        </header>
+
+
+        <!-- Success Message -->
+
+        {% if message %}
+
+        <div class="success-message">
+            {{ message }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Error Message -->
+
+        {% if error %}
+
+        <div class="error-message">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Create Subscription -->
+
+        <section class="subscription-form-section">
+
+            <div class="section-heading">
+
+                <h2>Create New Subscription</h2>
+
+                <p>
+                    Select a customer, plan and product to create
+                    a new subscription.
+                </p>
+
+            </div>
+
+
+            <form method="POST"
+                  action="{{ url_for('subscriptions') }}">
+
+
+                <div class="form-grid">
+
+
+                    <!-- Customer -->
+
+                    <div class="form-group">
+
+                        <label for="customer_id">Select Customer *</label>
+
+                        <select id="customer_id"
+                                name="customer_id"
+                                required>
+
+                            <option value="">Choose a customer</option>
+
+                            {% for customer in customers %}
+
+                            <option value="{{ customer['id'] }}">
+
+                                {{ customer['name'] }}
+                                ({{ customer['email'] }})
+
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- Plan -->
+
+                    <div class="form-group">
+
+                        <label for="plan_id">Subscription Plan *</label>
+
+                        <select id="plan_id"
+                                name="plan_id"
+                                required>
+
+                            <option value="">Choose a plan</option>
+
+                            {% for plan in plans %}
+
+                            <option
+                                value="{{ plan['id'] }}"
+                                data-minimum="{{ plan['minimum_quantity'] }}">
+
+                                {{ plan['name'] }}
+                                — ₹{{ "%.2f"|format(plan['price']) }}
+                                / {{ plan['billing_frequency'] }}
+
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- Product -->
+
+                    <div class="form-group">
+
+                        <label for="product_id">Select Product *</label>
+
+                        <select id="product_id"
+                                name="product_id"
+                                required>
+
+                            <option value="">Choose a product</option>
+
+                            {% for product in products %}
+
+                            <option
+                                value="{{ product['id'] }}"
+                                data-price="{{ product['sales_price'] }}">
+
+                                {{ product['name'] }}
+                                — ₹{{ "%.2f"|format(product['sales_price']) }}
+
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- Variant -->
+
+                    <div class="form-group">
+
+                        <label for="variant_id">Product Variant</label>
+
+                        <select id="variant_id"
+                                name="variant_id">
+
+                            <option value="">No variant</option>
+
+                            {% for variant in variants %}
+
+                            <option
+                                value="{{ variant['id'] }}"
+                                data-product="{{ variant['product_id'] }}">
+
+                                {{ variant['product_name'] }}
+                                — {{ variant['variant_name'] }}
+                                (+₹{{ "%.2f"|format(variant['extra_price']) }})
+
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- Quantity -->
+
+                    <div class="form-group">
+
+                        <label for="quantity">Product Quantity *</label>
+
+                        <input
+                            type="number"
+                            id="quantity"
+                            name="quantity"
+                            value="1"
+                            min="1"
+                            required
+                        >
+
+                        <small id="quantity-help">
+                            Minimum quantity will depend on the selected plan.
+                        </small>
+
+                    </div>
+
+
+                    <!-- Tax -->
+
+                    <div class="form-group">
+
+                        <label for="tax_rate">Tax Rate (%) *</label>
+
+                        <input
+                            type="number"
+                            id="tax_rate"
+                            name="tax_rate"
+                            value="18"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            required
+                        >
+
+                    </div>
+
+
+                    <!-- Start Date -->
+
+                    <div class="form-group">
+
+                        <label for="start_date">Start Date *</label>
+
+                        <input
+                            type="date"
+                            id="start_date"
+                            name="start_date"
+                            value="{{ today }}"
+                            required
+                        >
+
+                    </div>
+
+
+                    <!-- Expiry Date -->
+
+                    <div class="form-group">
+
+                        <label for="expiry_date">Expiry Date *</label>
+
+                        <input
+                            type="date"
+                            id="expiry_date"
+                            name="expiry_date"
+                            required
+                        >
+
+                    </div>
+
+
+                    <!-- Payment Terms -->
+
+                    <div class="form-group">
+
+                        <label for="payment_terms_days">
+                            Payment Terms (Days) *
+                        </label>
+
+                        <input
+                            type="number"
+                            id="payment_terms_days"
+                            name="payment_terms_days"
+                            value="7"
+                            min="0"
+                            max="365"
+                            required
+                        >
+
+                    </div>
+
+
+                </div>
+
+
+                <div class="subscription-note">
+
+                    <strong>Note:</strong>
+
+                    The subscription will initially be created
+                    with Draft status. The next steps will allow
+                    you to send a quotation and activate it.
+
+                </div>
+
+
+                <button type="submit" class="primary-button">
+
+                    + Create Subscription
+
+                </button>
+
+
+            </form>
+
+        </section>
+
+
+        <!-- Subscription Directory -->
+
+        <section class="subscription-table-section">
+
+            <div class="section-heading">
+
+                <h2>All Subscriptions</h2>
+
+                <p>
+                    Track customer subscriptions and their current status.
+                </p>
+
+            </div>
+
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Subscription ID</th>
+
+                            <th>Customer</th>
+
+                            <th>Plan</th>
+
+                            <th>Billing Cycle</th>
+
+                            <th>Product</th>
+
+                            <th>Start Date</th>
+
+                            <th>Expiry Date</th>
+
+                            <th>Total Amount</th>
+
+                            <th>Status</th>
+
+                            <th>Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for subscription in subscriptions %}
+
+                        <tr>
+
+                            <td>
+                                <strong>
+                                    {{ subscription["subscription_number"] }}
+                                </strong>
+                            </td>
+
+
+                            <td>
+                                {{ subscription["customer_name"] }}
+                            </td>
+
+
+                            <td>
+                                {{ subscription["plan_name"] }}
+                            </td>
+
+
+                            <td>
+                                {{ subscription["billing_frequency"].title() }}
+                            </td>
+
+
+                            <td>
+
+                                {% for line in subscription["lines"] %}
+
+                                    {{ line["product_name"] }}
+
+                                    {% if line["variant_name"] %}
+                                        ({{ line["variant_name"] }})
+                                    {% endif %}
+
+                                    <br>
+
+                                    <small>
+                                        Qty: {{ line["quantity"] }}
+                                        × ₹{{ "%.2f"|format(line["unit_price"]) }}
+                                    </small>
+
+                                {% endfor %}
+
+                            </td>
+
+
+                            <td>
+                                {{ subscription["start_date"] }}
+                            </td>
+
+
+                            <td>
+                                {{ subscription["expiry_date"] }}
+                            </td>
+
+
+                            <td>
+                                ₹{{ "%.2f"|format(subscription["total_amount"]) }}
+                            </td>
+
+
+                            <td>
+
+                                <span class="status-badge
+                                    status-{{ subscription['status']|lower }}">
+
+                                    {{ subscription["status"] }}
+
+                                </span>
+
+                            </td>
+
+
+                            <td>
+
+                                <div class="subscription-actions">
+
+                                    {% if subscription["status"] == "Draft" %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="send_quotation">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Send Quotation
+                                        </button>
+
+                                    </form>
+
+                                    {% elif subscription["status"] == "Quotation" %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="confirm">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Confirm
+                                        </button>
+
+                                    </form>
+
+                                    {% elif subscription["status"] == "Confirmed" %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="activate">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Activate
+                                        </button>
+
+                                    </form>
+
+                                    {% elif subscription["status"] == "Active" %}
+
+                                        {% if subscription["allow_pause"] %}
+
+                                        <form method="POST"
+                                              action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                            <input type="hidden"
+                                                   name="action"
+                                                   value="pause">
+
+                                            <button type="submit"
+                                                    class="small-action-button">
+                                                Pause
+                                            </button>
+
+                                        </form>
+
+                                        {% endif %}
+
+                                    {% elif subscription["status"] == "Paused" %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="resume">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Resume
+                                        </button>
+
+                                    </form>
+
+                                    {% endif %}
+
+
+                                    {% if subscription["status"] in ["Active", "Paused"] %}
+
+                                        {% if subscription["allow_early_close"] %}
+
+                                        <form method="POST"
+                                              action="{{ url_for('update_subscription_status', subscription_id=subscription['id']) }}">
+
+                                            <input type="hidden"
+                                                   name="action"
+                                                   value="close">
+
+                                            <button type="submit"
+                                                    class="small-danger-button">
+                                                Close
+                                            </button>
+
+                                        </form>
+
+                                        {% endif %}
+
+                                    {% endif %}
+
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+
+                        {% else %}
+
+                        <tr>
+
+                            <td colspan="10" class="empty-state">
+
+                                No subscriptions created yet.
+                                Create your first subscription above.
+
+                            </td>
+
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<script>
+
+// Filter variants according to selected product
+
+const productSelect = document.getElementById("product_id");
+
+const variantSelect = document.getElementById("variant_id");
+
+function filterProductVariants() {
+
+    const selectedProduct = productSelect.value;
+
+    variantSelect.value = "";
+
+    Array.from(variantSelect.options).forEach(option => {
+
+        if (option.value === "") {
+            option.hidden = false;
+            option.disabled = false;
+            return;
+        }
+
+        const matches =
+            option.dataset.product === selectedProduct;
+
+        option.hidden = !matches;
+        option.disabled = !matches;
+
+    });
+
+}
+
+// Update minimum quantity based on selected plan
+
+const planSelect = document.getElementById("plan_id");
+
+const quantityInput = document.getElementById("quantity");
+
+const quantityHelp = document.getElementById("quantity-help");
+
+function updateMinimumQuantity() {
+
+    const selectedOption =
+        planSelect.options[planSelect.selectedIndex];
+
+    const minimum =
+        Number(selectedOption.dataset.minimum || 1);
+
+    quantityInput.min = minimum;
+
+    if (Number(quantityInput.value) < minimum) {
+        quantityInput.value = minimum;
+    }
+
+    quantityHelp.textContent =
+        "Minimum quantity required: " + minimum;
+
+}
+
+productSelect.addEventListener(
+    "change",
+    filterProductVariants
+);
+
+planSelect.addEventListener(
+    "change",
+    updateMinimumQuantity
+);
+
+</script>
+
+</body>
+</html>
