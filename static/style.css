@@ -366,3 +366,78 @@ tbody tr:hover {
         padding: 18px;
     }
 }
+
+/* =====================================
+   PRODUCT MANAGEMENT
+===================================== */
+
+.product-form-section,
+.product-table-section {
+    background: white;
+    padding: 28px;
+    border-radius: 12px;
+    margin-top: 25px;
+    box-shadow: 0 3px 12px #00000008;
+}
+
+.product-form-section .section-heading,
+.product-table-section .section-heading {
+    margin-bottom: 22px;
+}
+
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    font-family: Arial, sans-serif;
+    background: white;
+}
+
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: #2563eb;
+}
+
+.notes-group {
+    margin-bottom: 22px;
+}
+
+.notes-group textarea {
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.variant-item {
+    margin-bottom: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.variant-item strong {
+    color: #334155;
+    font-size: 13px;
+}
+
+.variant-item span {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.no-variant {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+@media (max-width: 700px) {
+
+    .product-form-section,
+    .product-table-section {
+        padding: 18px;
+    }
+
+}
