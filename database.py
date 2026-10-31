@@ -18,57 +18,69 @@ def get_db_connection():
 
 
 def init_db():
-    """Create the customers table if it does not exist."""
+    """Create all database tables if they do not exist."""
 
     connection = get_db_connection()
 
     try:
+        # Create customers table
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                company TEXT DEFAULT '',
+                phone TEXT DEFAULT '',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create products table
         connection.execute("""
-           CREATE TABLE IF NOT EXISTS products (
+            CREATE TABLE IF NOT EXISTS products (
 
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-           name TEXT NOT NULL,
+        name TEXT NOT NULL,
 
-           product_type TEXT NOT NULL,
+        product_type TEXT NOT NULL,
 
-           sales_price REAL NOT NULL CHECK(sales_price >= 0),
+        sales_price REAL NOT NULL CHECK(sales_price >= 0),
 
-           cost_price REAL NOT NULL CHECK(cost_price >= 0),
+        cost_price REAL NOT NULL CHECK(cost_price >= 0),
 
-           notes TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
 
-           created_at TEXT DEFAULT CURRENT_TIMESTAMP
- 
-           )
-           """)
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+
+            )
+        """)
 
 
-# Create product variants table
+        # Create product variants table
         connection.execute("""
-          CREATE TABLE IF NOT EXISTS product_variants (
+            CREATE TABLE IF NOT EXISTS product_variants (
 
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-          product_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
 
-          variant_name TEXT NOT NULL COLLATE NOCASE,
+        variant_name TEXT NOT NULL COLLATE NOCASE,
 
-          extra_price REAL NOT NULL DEFAULT 0
+        extra_price REAL NOT NULL DEFAULT 0
             CHECK(extra_price >= 0),
 
-          FOREIGN KEY (product_id)
+        FOREIGN KEY (product_id)
             REFERENCES products(id)
             ON DELETE CASCADE,
 
-          UNIQUE(product_id, variant_name)
+        UNIQUE(product_id, variant_name)
 
-    )
-""")
-# Create subscription plans table
+            )
+        """)
+        # Create subscription plans table
         connection.execute("""
-    CREATE TABLE IF NOT EXISTS subscription_plans (
+            CREATE TABLE IF NOT EXISTS subscription_plans (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -101,13 +113,14 @@ def init_db():
 
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
 
-    )
-""")
-# =====================================
-# SUBSCRIPTIONS TABLE
-# =====================================
-connection.execute("""
-    CREATE TABLE IF NOT EXISTS subscriptions (
+            )
+        """)
+        # =====================================
+        # SUBSCRIPTIONS TABLE
+        # =====================================
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -149,16 +162,16 @@ connection.execute("""
         FOREIGN KEY (plan_id)
             REFERENCES subscription_plans(id)
 
-    )
-""")
+            )
+        """)
 
 
-# =====================================
-# SUBSCRIPTION PRODUCT LINES
-# =====================================
+        # =====================================
+        # SUBSCRIPTION PRODUCT LINES
+        # =====================================
 
-connection.execute("""
-    CREATE TABLE IF NOT EXISTS subscription_lines (
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_lines (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -187,14 +200,14 @@ connection.execute("""
         FOREIGN KEY (variant_id)
             REFERENCES product_variants(id)
 
-    )
-""")
-# =====================================
-# INVOICES TABLE
-# =====================================
+            )
+        """)
+        # =====================================
+        # INVOICES TABLE
+        # =====================================
 
-connection.execute("""
-    CREATE TABLE IF NOT EXISTS invoices (
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS invoices (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -238,16 +251,16 @@ connection.execute("""
 
         UNIQUE(subscription_id, billing_period_start)
 
-    )
-""")
+            )
+        """)
 
 
-# =====================================
-# INVOICE LINE ITEMS TABLE
-# =====================================
+        # =====================================
+        # INVOICE LINE ITEMS TABLE
+        # =====================================
 
-connection.execute("""
-    CREATE TABLE IF NOT EXISTS invoice_lines (
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS invoice_lines (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -271,24 +284,24 @@ connection.execute("""
             REFERENCES invoices(id)
             ON DELETE CASCADE
 
-    )
-""")
-# Indexes for faster invoice searches
-connection.execute("""
-    CREATE INDEX IF NOT EXISTS idx_invoices_customer
-    ON invoices(customer_id)
-""")
+            )
+        """)
+        # Indexes for faster invoice searches
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_invoices_customer
+            ON invoices(customer_id)
+        """)
 
-connection.execute("""
-    CREATE INDEX IF NOT EXISTS idx_invoices_status
-    ON invoices(status)
-""")
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_invoices_status
+            ON invoices(status)
+        """)
 
-connection.execute("""
-    CREATE INDEX IF NOT EXISTS idx_invoices_due_date
-    ON invoices(due_date)
-""")
-# Payments Table
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_invoices_due_date
+            ON invoices(due_date)
+        """)
+        # Payments Table
         connection.execute("""
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -321,7 +334,7 @@ connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_payments_customer
             ON payments(customer_id)
         """)
-# Discounts Table
+        # Discounts Table
         connection.execute("""
             CREATE TABLE IF NOT EXISTS discounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

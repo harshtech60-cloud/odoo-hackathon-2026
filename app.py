@@ -1,18 +1,15 @@
-import sqlite3
-from datetime import date
-import uuid
 import calendar
-from datetime import date, timedelta
 import math
-import sqlite3
-from datetime import date
-from datetime import date
-from decimal import Decimal, InvalidOperation
-from decimal import Decimal, InvalidOperation
-from flask import Flask, render_template, request, redirect, url_for
-from database import get_db_connection, init_db
-import sqlite3
+import os
 import re
+import sqlite3
+import uuid
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+
+from flask import Flask, render_template, request, redirect, url_for
+
+from database import get_db_connection, init_db
 
 
 app = Flask(__name__)
@@ -1048,7 +1045,9 @@ def find_due_subscriptions(connection, today):
             })
 
     return due_list
-    # =====================================
+
+
+# =====================================
 # INVOICE MANAGEMENT PAGE
 # =====================================
 
@@ -1084,18 +1083,32 @@ def invoices():
             today
         )
 
+        # Confirmed invoices minus the completed payments already received
         total_outstanding = connection.execute("""
-            SELECT COALESCE(SUM(total_amount), 0) AS total
-            FROM invoices
-            WHERE status = 'Confirmed'
-              total_outstanding = connection.execute("""     SELECT COALESCE(SUM(total_amount), 0) AS total     FROM invoices     WHERE status = 'Confirmed' """).fetchone()["total"]
+            SELECT COALESCE(SUM(
+                i.total_amount - COALESCE((
+                    SELECT SUM(p.amount)
+                    FROM payments p
+                    WHERE p.invoice_id = i.id
+                      AND p.status = 'Completed'
+                ), 0)
+            ), 0) AS total
+            FROM invoices i
+            WHERE i.status = 'Confirmed'
         """).fetchone()["total"]
 
         overdue_total = connection.execute("""
-            SELECT COALESCE(SUM(total_amount), 0) AS total
-            FROM invoices
-            WHERE status = 'Confirmed'
-              AND due_date < ?
+            SELECT COALESCE(SUM(
+                i.total_amount - COALESCE((
+                    SELECT SUM(p.amount)
+                    FROM payments p
+                    WHERE p.invoice_id = i.id
+                      AND p.status = 'Completed'
+                ), 0)
+            ), 0) AS total
+            FROM invoices i
+            WHERE i.status = 'Confirmed'
+              AND i.due_date < ?
         """, (today.isoformat(),)).fetchone()["total"]
 
     finally:
@@ -2060,8 +2073,12 @@ def delete_discount(discount_id):
         "discounts",
         message="Discount deleted successfully."
     ))
+
+
+# Create tables on startup so the app also works under gunicorn
+init_db()
+
+
 if __name__ == "__main__":
 
-    init_db()
-
-    app.run(debug=True)
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
