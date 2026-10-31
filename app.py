@@ -1786,6 +1786,280 @@ def reports():
         monthly_revenue=monthly_revenue,
         outstanding_amount=outstanding_amount
     )
+    # =====================================
+# DISCOUNT MANAGEMENT
+# =====================================
+
+@app.route("/discounts")
+def discounts():
+    conn = get_db_connection()
+
+    today = date.today().isoformat()
+
+    discount_list = conn.execute("""
+        SELECT *
+        FROM discounts
+        ORDER BY id DESC
+    """).fetchall()
+
+    total_discounts = conn.execute("""
+        SELECT COUNT(*) FROM discounts
+    """).fetchone()[0]
+
+    active_discounts = conn.execute("""
+        SELECT COUNT(*)
+        FROM discounts
+        WHERE status = 'Active'
+          AND start_date <= ?
+          AND end_date >= ?
+          AND (usage_limit IS NULL OR used_count < usage_limit)
+    """, (today, today)).fetchone()[0]
+
+    inactive_discounts = conn.execute("""
+        SELECT COUNT(*)
+        FROM discounts
+        WHERE status = 'Inactive'
+    """).fetchone()[0]
+
+    expired_discounts = conn.execute("""
+        SELECT COUNT(*)
+        FROM discounts
+        WHERE end_date < ?
+    """, (today,)).fetchone()[0]
+
+    conn.close()
+
+    return render_template(
+        "discounts.html",
+        discounts=discount_list,
+        total_discounts=total_discounts,
+        active_discounts=active_discounts,
+        inactive_discounts=inactive_discounts,
+        expired_discounts=expired_discounts,
+        today=today
+    )
+
+
+# Add a new discount
+@app.route("/discounts/add", methods=["POST"])
+def add_discount():
+
+    code = request.form.get("code", "").strip().upper()
+    description = request.form.get("description", "").strip()
+    discount_type = request.form.get("discount_type")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+
+    try:
+        discount_value = float(request.form.get("discount_value", 0))
+        min_order_value = float(
+            request.form.get("min_order_value") or 0
+        )
+
+        max_discount_input = request.form.get(
+            "max_discount_amount", ""
+        ).strip()
+
+        max_discount_amount = (
+            float(max_discount_input)
+            if max_discount_input else None
+        )
+
+        usage_input = request.form.get("usage_limit", "").strip()
+
+        usage_limit = int(usage_input) if usage_input else None
+
+    except (TypeError, ValueError):
+        return redirect(url_for(
+            "discounts",
+            error="Please enter valid numeric values."
+        ))
+
+    # Validate the discount code
+    if not code or not (
+        code.replace("-", "").replace("_", "").isalnum()
+    ):
+        return redirect(url_for(
+            "discounts",
+            error="Use letters, numbers, hyphens or underscores in the code."
+        ))
+
+    # Validate discount type
+    if discount_type not in ["Percentage", "Fixed Amount"]:
+        return redirect(url_for(
+            "discounts",
+            error="Invalid discount type."
+        ))
+
+    # Validate discount value
+    if discount_value <= 0:
+        return redirect(url_for(
+            "discounts",
+            error="Discount value must be greater than zero."
+        ))
+
+    if discount_type == "Percentage" and discount_value > 100:
+        return redirect(url_for(
+            "discounts",
+            error="Percentage discount cannot exceed 100%."
+        ))
+
+    if min_order_value < 0:
+        return redirect(url_for(
+            "discounts",
+            error="Minimum order value cannot be negative."
+        ))
+
+    if max_discount_amount is not None and max_discount_amount <= 0:
+        return redirect(url_for(
+            "discounts",
+            error="Maximum discount amount must be positive."
+        ))
+
+    if usage_limit is not None and usage_limit <= 0:
+        return redirect(url_for(
+            "discounts",
+            error="Usage limit must be greater than zero."
+        ))
+
+    # Validate dates
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+
+        if end < start:
+            raise ValueError("End date cannot be before start date.")
+
+    except (ValueError, TypeError):
+        return redirect(url_for(
+            "discounts",
+            error="Please enter valid dates. End date must not be before start date."
+        ))
+
+    conn = get_db_connection()
+
+    try:
+        conn.execute("""
+            INSERT INTO discounts (
+                code,
+                description,
+                discount_type,
+                discount_value,
+                min_order_value,
+                max_discount_amount,
+                start_date,
+                end_date,
+                usage_limit,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+        """, (
+            code,
+            description,
+            discount_type,
+            discount_value,
+            min_order_value,
+            max_discount_amount,
+            start_date,
+            end_date,
+            usage_limit
+        ))
+
+        conn.commit()
+
+    except sqlite3.IntegrityError:
+        conn.close()
+        return redirect(url_for(
+            "discounts",
+            error="This discount code already exists."
+        ))
+
+    conn.close()
+
+    return redirect(url_for(
+        "discounts",
+        message="Discount created successfully."
+    ))
+
+
+# Activate or deactivate a discount
+@app.route("/discounts/<int:discount_id>/toggle", methods=["POST"])
+def toggle_discount(discount_id):
+
+    conn = get_db_connection()
+
+    discount = conn.execute("""
+        SELECT status
+        FROM discounts
+        WHERE id = ?
+    """, (discount_id,)).fetchone()
+
+    if discount is None:
+        conn.close()
+        return redirect(url_for(
+            "discounts",
+            error="Discount not found."
+        ))
+
+    new_status = (
+        "Inactive"
+        if discount["status"] == "Active"
+        else "Active"
+    )
+
+    conn.execute("""
+        UPDATE discounts
+        SET status = ?
+        WHERE id = ?
+    """, (new_status, discount_id))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for(
+        "discounts",
+        message="Discount status updated."
+    ))
+
+
+# Delete a discount that has not been used
+@app.route("/discounts/<int:discount_id>/delete", methods=["POST"])
+def delete_discount(discount_id):
+
+    conn = get_db_connection()
+
+    discount = conn.execute("""
+        SELECT used_count
+        FROM discounts
+        WHERE id = ?
+    """, (discount_id,)).fetchone()
+
+    if discount is None:
+        conn.close()
+        return redirect(url_for(
+            "discounts",
+            error="Discount not found."
+        ))
+
+    if discount["used_count"] > 0:
+        conn.close()
+        return redirect(url_for(
+            "discounts",
+            error="This discount has been used and cannot be deleted."
+        ))
+
+    conn.execute("""
+        DELETE FROM discounts
+        WHERE id = ?
+    """, (discount_id,))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for(
+        "discounts",
+        message="Discount deleted successfully."
+    ))
 if __name__ == "__main__":
 
     init_db()
