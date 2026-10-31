@@ -1692,6 +1692,98 @@ def add_payment():
     conn.close()
 
     return redirect(url_for("payments"))
+    # =====================================
+# REPORTS & ANALYTICS
+# =====================================
+
+@app.route("/reports")
+def reports():
+    conn = get_db_connection()
+
+    # 1. Total revenue received
+    total_revenue = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM payments
+        WHERE status = 'Completed'
+    """).fetchone()[0]
+
+    # 2. Pending payments
+    pending_payments = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM payments
+        WHERE status = 'Pending'
+    """).fetchone()[0]
+
+    # 3. Total customers
+    total_customers = conn.execute("""
+        SELECT COUNT(*) FROM customers
+    """).fetchone()[0]
+
+    # 4. Subscription status summary
+    subscription_stats = conn.execute("""
+        SELECT status, COUNT(*) AS total
+        FROM subscriptions
+        GROUP BY status
+    """).fetchall()
+
+    # 5. Invoice status summary
+    invoice_stats = conn.execute("""
+        SELECT status, COUNT(*) AS total
+        FROM invoices
+        GROUP BY status
+    """).fetchall()
+
+    # 6. Payment method summary
+    payment_method_stats = conn.execute("""
+        SELECT payment_method,
+               COUNT(*) AS transactions,
+               COALESCE(SUM(amount), 0) AS total_amount
+        FROM payments
+        WHERE status = 'Completed'
+        GROUP BY payment_method
+        ORDER BY total_amount DESC
+    """).fetchall()
+
+    # 7. Monthly revenue
+    monthly_revenue = conn.execute("""
+        SELECT
+            strftime('%Y-%m', payment_date) AS month,
+            COALESCE(SUM(amount), 0) AS revenue
+        FROM payments
+        WHERE status = 'Completed'
+        GROUP BY strftime('%Y-%m', payment_date)
+        ORDER BY month DESC
+        LIMIT 12
+    """).fetchall()
+
+    # 8. Outstanding invoice amount
+    outstanding_amount = conn.execute("""
+        SELECT COALESCE(SUM(
+            i.total_amount - COALESCE(p.paid_amount, 0)
+        ), 0)
+        FROM invoices i
+        LEFT JOIN (
+            SELECT invoice_id, SUM(amount) AS paid_amount
+            FROM payments
+            WHERE status = 'Completed'
+            GROUP BY invoice_id
+        ) p ON i.id = p.invoice_id
+        WHERE i.status = 'Confirmed'
+    """).fetchone()[0]
+
+    conn.close()
+
+    return render_template(
+        "reports.html",
+        total_revenue=total_revenue,
+        pending_payments=pending_payments,
+        total_customers=total_customers,
+        subscription_stats=subscription_stats,
+        invoice_stats=invoice_stats,
+        payment_method_stats=payment_method_stats,
+        monthly_revenue=monthly_revenue,
+        outstanding_amount=outstanding_amount
+    )
 if __name__ == "__main__":
 
     init_db()
