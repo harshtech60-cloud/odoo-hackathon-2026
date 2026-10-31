@@ -1,8 +1,11 @@
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from decimal import Decimal, InvalidOperation
 from flask import Flask, render_template, request, redirect, url_for
 from database import get_db_connection, init_db
 import sqlite3
 import re
+
 
 app = Flask(__name__)
 
@@ -315,6 +318,182 @@ def add_product_variant(product_id):
         connection.close()
 
     return redirect(url_for("products", variant_added="1"))
+    # =====================================
+# SUBSCRIPTION PLANS MANAGEMENT
+# =====================================
+
+@app.route("/plans", methods=["GET", "POST"])
+def plans():
+
+    message = None
+    error = None
+
+    if request.method == "POST":
+
+        name = request.form.get("name", "").strip()
+
+        price_text = request.form.get("price", "").strip()
+
+        frequency = request.form.get(
+            "billing_frequency", ""
+        ).strip()
+
+        quantity_text = request.form.get(
+            "minimum_quantity", "1"
+        ).strip()
+
+        available_from = request.form.get(
+            "available_from", ""
+        )
+
+        available_until = request.form.get(
+            "available_until", ""
+        )
+
+        auto_close = int(
+            request.form.get("auto_close") == "on"
+        )
+
+        allow_early_close = int(
+            request.form.get("allow_early_close") == "on"
+        )
+
+        allow_pause = int(
+            request.form.get("allow_pause") == "on"
+        )
+
+        allow_renewal = int(
+            request.form.get("allow_renewal") == "on"
+        )
+
+        # Validate plan name
+        if not name:
+
+            error = "Plan name is required."
+
+        # Validate plan price
+        if error is None:
+
+            try:
+
+                price = Decimal(price_text)
+
+                if not price.is_finite() or price < 0:
+                    error = "Enter a valid non-negative plan price."
+
+            except (InvalidOperation, ValueError):
+                error = "Invalid plan price."
+
+        # Validate billing frequency
+        if error is None:
+
+            valid_frequencies = [
+                "daily", "weekly", "monthly", "yearly"
+            ]
+
+            if frequency not in valid_frequencies:
+                error = "Please select a valid billing frequency."
+
+        # Validate minimum quantity
+        if error is None:
+
+            try:
+
+                minimum_quantity = int(quantity_text)
+
+                if minimum_quantity < 1:
+                    error = "Minimum quantity must be at least 1."
+
+            except ValueError:
+                error = "Enter a valid minimum quantity."
+
+        # Validate dates
+        if error is None:
+
+            try:
+
+                start_date = date.fromisoformat(available_from)
+
+                end_date = (
+                    date.fromisoformat(available_until)
+                    if available_until else None
+                )
+
+                if end_date and end_date < start_date:
+                    error = "End date cannot be before start date."
+
+            except ValueError:
+                error = "Please enter valid availability dates."
+
+        # Save plan
+        if error is None:
+
+            connection = get_db_connection()
+
+            try:
+
+                connection.execute("""
+                    INSERT INTO subscription_plans (
+                        name,
+                        price,
+                        billing_frequency,
+                        minimum_quantity,
+                        available_from,
+                        available_until,
+                        auto_close,
+                        allow_early_close,
+                        allow_pause,
+                        allow_renewal
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    name,
+                    float(price),
+                    frequency,
+                    minimum_quantity,
+                    available_from,
+                    available_until or None,
+                    auto_close,
+                    allow_early_close,
+                    allow_pause,
+                    allow_renewal
+                ))
+
+                connection.commit()
+
+            except sqlite3.IntegrityError:
+
+                error = "Unable to save the subscription plan."
+
+            finally:
+                connection.close()
+
+            if error is None:
+                return redirect(url_for("plans", added="1"))
+
+    if request.args.get("added") == "1":
+        message = "Subscription plan created successfully!"
+
+    # Retrieve saved plans
+    connection = get_db_connection()
+
+    try:
+
+        plan_list = connection.execute("""
+            SELECT *
+            FROM subscription_plans
+            ORDER BY id DESC
+        """).fetchall()
+
+    finally:
+        connection.close()
+
+    return render_template(
+        "plans.html",
+        plans=plan_list,
+        message=message,
+        error=error
+    )
 if __name__ == "__main__":
 
     init_db()
