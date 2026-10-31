@@ -1,4 +1,4 @@
-
+\
 <!DOCTYPE html>
 <html lang="en">
 
@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Brightloop | Invoices & Billing</title>
+    <title>Brightloop | Invoice Management</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
@@ -16,8 +16,7 @@
 
 <div class="layout">
 
-    <!-- Sidebar -->
-
+    <!-- SIDEBAR -->
     <aside class="sidebar">
 
         <div class="brand">
@@ -32,7 +31,7 @@
             <a href="{{ url_for('plans') }}">Plans</a>
             <a href="{{ url_for('subscriptions') }}">Subscriptions</a>
             <a class="active" href="{{ url_for('invoices') }}">Invoices</a>
-            <a href="{{ url_for('invoices') }}">Invoices</a>
+            <a href="#">Payments</a>
             <a href="#">Discounts</a>
             <a href="#">Reports</a>
         </nav>
@@ -44,15 +43,15 @@
     </aside>
 
 
-    <!-- Main Content -->
-
+    <!-- MAIN CONTENT -->
     <main class="main">
 
+        <!-- HEADER -->
         <header class="topbar">
 
             <div>
                 <h1>Invoice & Billing Management</h1>
-                <p>Generate recurring invoices and track billing.</p>
+                <p>Manage recurring billing and customer invoices.</p>
             </div>
 
             <a href="{{ url_for('dashboard') }}" class="back-link">
@@ -62,8 +61,7 @@
         </header>
 
 
-        <!-- Messages -->
-
+        <!-- SUCCESS MESSAGE -->
         {% if message %}
 
         <div class="success-message">
@@ -72,14 +70,19 @@
 
         {% endif %}
 
+
+        <!-- BILLING GENERATION MESSAGE -->
         {% if generated is not none %}
 
         <div class="success-message">
-            Billing process completed. {{ generated }} new invoice(s) generated.
+            Billing process completed.
+            {{ generated }} new invoice(s) generated.
         </div>
 
         {% endif %}
 
+
+        <!-- ERROR MESSAGE -->
         {% if error %}
 
         <div class="error-message">
@@ -89,20 +92,19 @@
         {% endif %}
 
 
-        <!-- Billing Summary -->
-
+        <!-- BILLING SUMMARY -->
         <section class="billing-summary">
 
             <div class="billing-stat">
-                <p>Subscriptions Due Today</p>
+                <p>Subscriptions Due</p>
                 <h2>{{ due_subscriptions|length }}</h2>
-                <small>Active subscriptions awaiting billing</small>
+                <small>Awaiting invoice generation</small>
             </div>
 
             <div class="billing-stat">
-                <p>Outstanding Invoices</p>
+                <p>Outstanding Amount</p>
                 <h2>₹{{ "%.2f"|format(total_outstanding) }}</h2>
-                <small>Confirmed and unpaid invoices</small>
+                <small>Confirmed unpaid invoices</small>
             </div>
 
             <div class="billing-stat">
@@ -114,8 +116,7 @@
         </section>
 
 
-        <!-- Billing Control Center -->
-
+        <!-- BILLING CONTROL CENTER -->
         <section class="billing-control">
 
             <div class="section-heading">
@@ -123,7 +124,7 @@
                 <h2>Billing Control Center</h2>
 
                 <p>
-                    Generate invoices for all active subscriptions
+                    Generate invoices automatically for subscriptions
                     whose billing dates have arrived.
                 </p>
 
@@ -138,7 +139,7 @@
 
                     <thead>
                         <tr>
-                            <th>Subscription</th>
+                            <th>Subscription ID</th>
                             <th>Customer</th>
                             <th>Plan</th>
                             <th>Next Billing Date</th>
@@ -150,10 +151,23 @@
                         {% for sub in due_subscriptions %}
 
                         <tr>
-                            <td>{{ sub["subscription_number"] }}</td>
-                            <td>{{ sub["customer_name"] }}</td>
-                            <td>{{ sub["plan_name"] }}</td>
-                            <td>{{ sub["next_due_date"] }}</td>
+
+                            <td>
+                                {{ sub["subscription_number"] }}
+                            </td>
+
+                            <td>
+                                {{ sub["customer_name"] }}
+                            </td>
+
+                            <td>
+                                {{ sub["plan_name"] }}
+                            </td>
+
+                            <td>
+                                {{ sub["next_due_date"] }}
+                            </td>
+
                         </tr>
 
                         {% endfor %}
@@ -167,8 +181,13 @@
             {% else %}
 
             <div class="empty-billing">
-                <h3>No subscriptions are due for billing.</h3>
-                <p>All active subscriptions are up to date.</p>
+
+                <h3>No subscriptions are currently due.</h3>
+
+                <p>
+                    All active subscriptions are up to date.
+                </p>
+
             </div>
 
             {% endif %}
@@ -176,7 +195,7 @@
 
             <form method="POST"
                   action="{{ url_for('generate_due_invoices') }}"
-                  onsubmit="return confirm('Generate all due invoices? This process will check for duplicate billing before creating invoices.');">
+                  onsubmit="return confirm('Are you sure you want to generate all due invoices?');">
 
                 <button type="submit" class="primary-button">
                     Generate Due Invoices
@@ -187,8 +206,7 @@
         </section>
 
 
-        <!-- Invoice Directory -->
-
+        <!-- INVOICE DIRECTORY -->
         <section class="invoice-table-section">
 
             <div class="section-heading">
@@ -196,27 +214,30 @@
                 <h2>Invoice Directory</h2>
 
                 <p>
-                    View, confirm, cancel and print generated invoices.
+                    View and manage all generated invoices.
                 </p>
 
             </div>
 
 
+            <!-- INVOICE TABLE -->
             <div class="table-container">
 
                 <table>
 
                     <thead>
+
                         <tr>
                             <th>Invoice Number</th>
                             <th>Customer</th>
                             <th>Subscription</th>
                             <th>Invoice Date</th>
                             <th>Due Date</th>
-                            <th>Total</th>
+                            <th>Total Amount</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
+
                     </thead>
 
 
@@ -226,33 +247,56 @@
 
                         <tr>
 
+                            <!-- Invoice Number -->
                             <td>
-                                <strong>{{ invoice["invoice_number"] }}</strong>
+                                <strong>
+                                    {{ invoice["invoice_number"] }}
+                                </strong>
                             </td>
 
-                            <td>{{ invoice["customer_name"] }}</td>
 
-                            <td>{{ invoice["subscription_number"] }}</td>
-
-                            <td>{{ invoice["invoice_date"] }}</td>
-
+                            <!-- Customer -->
                             <td>
+                                {{ invoice["customer_name"] }}
+                            </td>
+
+
+                            <!-- Subscription -->
+                            <td>
+                                {{ invoice["subscription_number"] }}
+                            </td>
+
+
+                            <!-- Invoice Date -->
+                            <td>
+                                {{ invoice["invoice_date"] }}
+                            </td>
+
+
+                            <!-- Due Date -->
+                            <td>
+
                                 {{ invoice["due_date"] }}
 
                                 {% if invoice["status"] == "Confirmed"
-                                      and invoice["due_date"] < today %}
+                                    and invoice["due_date"] < today %}
 
-                                    <small class="overdue-label">
+                                    <span class="overdue-label">
                                         Overdue
-                                    </small>
+                                    </span>
 
                                 {% endif %}
+
                             </td>
 
+
+                            <!-- Amount -->
                             <td>
                                 ₹{{ "%.2f"|format(invoice["total_amount"]) }}
                             </td>
 
+
+                            <!-- Status -->
                             <td>
 
                                 <span class="status-badge status-{{ invoice['status']|lower }}">
@@ -265,18 +309,24 @@
 
                             </td>
 
+
+                            <!-- Actions -->
                             <td>
 
                                 <div class="invoice-actions">
 
+                                    <!-- Print -->
                                     <a
                                         href="{{ url_for('print_invoice', invoice_id=invoice['id']) }}"
                                         target="_blank"
                                         class="small-action-link">
+
                                         Print
+
                                     </a>
 
 
+                                    <!-- Confirm -->
                                     {% if invoice["status"] == "Draft" %}
 
                                     <form method="POST"
@@ -288,7 +338,9 @@
 
                                         <button type="submit"
                                                 class="small-action-button">
+
                                             Confirm
+
                                         </button>
 
                                     </form>
@@ -296,9 +348,9 @@
                                     {% endif %}
 
 
-                                    {% if invoice["status"] in ["Draft", "Confirmed"] %}
-
-                                    {% if not invoice["sent_at"] %}
+                                    <!-- Mark Sent -->
+                                    {% if invoice["status"] in ["Draft", "Confirmed"]
+                                          and not invoice["sent_at"] %}
 
                                     <form method="POST"
                                           action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}">
@@ -309,7 +361,9 @@
 
                                         <button type="submit"
                                                 class="small-action-button">
+
                                             Mark Sent
+
                                         </button>
 
                                     </form>
@@ -317,9 +371,12 @@
                                     {% endif %}
 
 
+                                    <!-- Cancel -->
+                                    {% if invoice["status"] in ["Draft", "Confirmed"] %}
+
                                     <form method="POST"
                                           action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}"
-                                          onsubmit="return confirm('Cancel this invoice?');">
+                                          onsubmit="return confirm('Are you sure you want to cancel this invoice?');">
 
                                         <input type="hidden"
                                                name="action"
@@ -327,7 +384,9 @@
 
                                         <button type="submit"
                                                 class="small-danger-button">
+
                                             Cancel
+
                                         </button>
 
                                     </form>
@@ -344,9 +403,16 @@
                         {% else %}
 
                         <tr>
+
                             <td colspan="8" class="empty-state">
+
                                 No invoices generated yet.
+
+                                Generate your first invoice using
+                                the Billing Control Center.
+
                             </td>
+
                         </tr>
 
                         {% endfor %}
