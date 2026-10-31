@@ -14,7 +14,7 @@ DB_PATH = Path(__file__).resolve().parent / "database.db"
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
 
-    connection
+    return connection
 
 
 def init_db():
