@@ -2079,6 +2079,6 @@ def delete_discount(discount_id):
 init_db()
 
 
-if __name__ == "__main__"
+if __name__ == "__main__":
 
     app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
