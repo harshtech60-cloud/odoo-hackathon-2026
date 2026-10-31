@@ -66,6 +66,43 @@ connection.execute("""
 
     )
 """)
+# Create subscription plans table
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS subscription_plans (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        price REAL NOT NULL CHECK(price >= 0),
+
+        billing_frequency TEXT NOT NULL
+            CHECK(billing_frequency IN (
+                'daily',
+                'weekly',
+                'monthly',
+                'yearly'
+            )),
+
+        minimum_quantity INTEGER NOT NULL DEFAULT 1
+            CHECK(minimum_quantity >= 1),
+
+        available_from TEXT NOT NULL,
+
+        available_until TEXT,
+
+        auto_close INTEGER NOT NULL DEFAULT 0,
+
+        allow_early_close INTEGER NOT NULL DEFAULT 1,
+
+        allow_pause INTEGER NOT NULL DEFAULT 1,
+
+        allow_renewal INTEGER NOT NULL DEFAULT 1,
+
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+
+    )
+""")
 
         connection.commit()
 
