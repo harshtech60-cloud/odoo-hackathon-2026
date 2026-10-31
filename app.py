@@ -1517,6 +1517,181 @@ def print_invoice(invoice_id):
         invoice=invoice,
         lines=lines
     )
+    # ==============================
+# PAYMENT MANAGEMENT
+# ==============================
+
+@app.route("/payments")
+def payments():
+    conn = get_db_connection()
+
+    # Get all payment records
+    payment_list = conn.execute("""
+        SELECT
+            p.*,
+            i.invoice_number,
+            i.total_amount,
+            c.name AS customer_name
+        FROM payments p
+        JOIN invoices i ON p.invoice_id = i.id
+        JOIN customers c ON p.customer_id = c.id
+        ORDER BY p.id DESC
+    """).fetchall()
+
+    # Get invoices that still have an outstanding balance
+    invoice_list = conn.execute("""
+        SELECT
+            i.id,
+            i.invoice_number,
+            i.total_amount,
+            i.due_date,
+            c.name AS customer_name,
+            (
+                i.total_amount -
+                COALESCE(SUM(
+                    CASE WHEN p.status = 'Completed'
+                    THEN p.amount ELSE 0 END
+                ), 0)
+            ) AS balance_due
+        FROM invoices i
+        JOIN customers c ON i.customer_id = c.id
+        LEFT JOIN payments p ON i.id = p.invoice_id
+        WHERE i.status = 'Confirmed'
+        GROUP BY i.id
+        HAVING balance_due > 0
+        ORDER BY i.due_date ASC
+    """).fetchall()
+
+    # Payment summary
+    total_received = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM payments
+        WHERE status = 'Completed'
+    """).fetchone()[0]
+
+    pending_total = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM payments
+        WHERE status = 'Pending'
+    """).fetchone()[0]
+
+    failed_count = conn.execute("""
+        SELECT COUNT(*)
+        FROM payments
+        WHERE status = 'Failed'
+    """).fetchone()[0]
+
+    conn.close()
+
+    return render_template(
+        "payments.html",
+        payments=payment_list,
+        invoices=invoice_list,
+        total_received=total_received,
+        pending_total=pending_total,
+        failed_count=failed_count
+    )
+
+
+# Add a new payment
+@app.route("/payments/add", methods=["POST"])
+def add_payment():
+    invoice_id = request.form.get("invoice_id")
+    amount = request.form.get("amount")
+    payment_date = request.form.get("payment_date") or date.today().isoformat()
+    payment_method = request.form.get("payment_method")
+    transaction_reference = request.form.get("transaction_reference")
+    notes = request.form.get("notes")
+    status = request.form.get("status", "Completed")
+
+    allowed_methods = [
+        "UPI", "Cash", "Bank Transfer", "Card", "Other"
+    ]
+
+    allowed_statuses = ["Completed", "Pending", "Failed"]
+
+    try:
+        invoice_id = int(invoice_id)
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return redirect(url_for("payments", error="Invalid payment details"))
+
+    if amount <= 0:
+        return redirect(url_for("payments", error="Amount must be greater than zero"))
+
+    if payment_method not in allowed_methods or status not in allowed_statuses:
+        return redirect(url_for("payments", error="Invalid payment method or status"))
+
+    conn = get_db_connection()
+
+    # Check whether the invoice exists and is awaiting payment
+    invoice = conn.execute("""
+        SELECT id, total_amount, status, customer_id
+        FROM invoices
+        WHERE id = ?
+    """, (invoice_id,)).fetchone()
+
+    if invoice is None or invoice["status"] != "Confirmed":
+        conn.close()
+        return redirect(url_for("payments", error="Invoice not available for payment"))
+
+    # Calculate the amount already received
+    already_paid = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM payments
+        WHERE invoice_id = ? AND status = 'Completed'
+    """, (invoice_id,)).fetchone()[0]
+
+    balance_due = invoice["total_amount"] - already_paid
+
+    if amount > balance_due:
+        conn.close()
+        return redirect(url_for("payments", error="Payment exceeds outstanding balance"))
+
+    # Generate a unique payment number
+    payment_number = "PAY-" + uuid.uuid4().hex[:10].upper()
+
+    # Save payment
+    conn.execute("""
+        INSERT INTO payments (
+            payment_number,
+            invoice_id,
+            customer_id,
+            payment_date,
+            amount,
+            payment_method,
+            transaction_reference,
+            notes,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        payment_number,
+        invoice_id,
+        invoice["customer_id"],
+        payment_date,
+        amount,
+        payment_method,
+        transaction_reference,
+        notes,
+        status
+    ))
+
+    # Update invoice when full payment is received
+    if status == "Completed":
+        new_total_paid = already_paid + amount
+
+        if new_total_paid >= invoice["total_amount"]:
+            conn.execute("""
+                UPDATE invoices
+                SET status = 'Paid'
+                WHERE id = ?
+            """, (invoice_id,))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for("payments"))
 if __name__ == "__main__":
 
     init_db()
