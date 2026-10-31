@@ -1,0 +1,80 @@
+{% from "_ui.html" import brand_mark %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Brightloop{% endblock %} | Brightloop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='brightloop.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+{% set here = request.endpoint %}
+{% macro link(endpoint, label, also=[]) -%}
+<a class="flow-link{% if here == endpoint or here in also %} is-active{% endif %}"
+   href="{{ url_for(endpoint) }}"{% if here == endpoint or here in also %} aria-current="page"{% endif %}>{{ label }}</a>
+{%- endmacro %}
+
+<div class="shell">
+    <aside class="rail">
+        <a class="brand" href="{{ url_for('dashboard') }}">
+            {{ brand_mark(38) }}
+            <span>
+                <strong>Brightloop</strong>
+                <span>Subscription billing</span>
+            </span>
+        </a>
+
+        <nav class="flow" aria-label="Main">
+            {% if current_user and current_user['role'] == 'customer' %}
+                {{ link('portal', 'My subscriptions') }}
+            {% else %}
+                {{ link('dashboard', 'Dashboard') }}
+
+                <p class="flow-label">Set up</p>
+                {{ link('customers', 'Customers') }}
+                {{ link('products', 'Products') }}
+                {{ link('plans', 'Plans') }}
+                {{ link('discounts', 'Discounts') }}
+
+                <p class="flow-label">Bill</p>
+                {{ link('subscriptions', 'Subscriptions') }}
+                {{ link('invoices', 'Invoices', ['print_invoice']) }}
+                {{ link('payments', 'Payments') }}
+
+                <p class="flow-label">Review</p>
+                {{ link('reports', 'Reports') }}
+
+                {% if current_user and current_user['role'] == 'admin' %}
+                <p class="flow-label">Admin</p>
+                {{ link('auth.staff', 'Staff') }}
+                {% endif %}
+            {% endif %}
+        </nav>
+
+        {% if current_user %}
+        <div class="rail-user">
+            <div>
+                <strong>{{ current_user['name'] }}</strong>
+                <small>{{ current_user['role']|capitalize }}</small>
+            </div>
+            <div class="rail-actions">
+                <a href="{{ url_for('auth.account') }}">Account</a>
+                <form method="post" action="{{ url_for('auth.logout') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">Sign out</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </aside>
+
+    <main class="workspace" id="main">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+</body>
+</html>

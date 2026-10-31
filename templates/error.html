@@ -1,0 +1,23 @@
+{% from "_ui.html" import brand_mark %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} | Brightloop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Public+Sans:wght@400;600&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='brightloop.css') }}">
+</head>
+<body>
+<main class="error-page">
+    <div class="error-card">
+        <div class="code">{{ code }}</div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ message }}</p>
+        <a class="btn" href="{{ url_for('dashboard') }}">Go to your home page</a>
+    </div>
+</main>
+</body>
+</html>

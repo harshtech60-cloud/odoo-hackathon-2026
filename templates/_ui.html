@@ -1,0 +1,39 @@
+{# Small building blocks shared by every page #}
+
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% macro notice(message=None, error=None) -%}
+{% if message %}<div class="notice notice--ok" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="notice notice--bad" role="alert">{{ error }}</div>{% endif %}
+{%- endmacro %}
+
+{% macro status(label, tone="muted") -%}
+<span class="status status--{{ tone }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro subscription_status(value) -%}
+{{ status(value, {
+    "Draft": "muted", "Quotation": "info", "Confirmed": "info",
+    "Active": "ok", "Paused": "warn", "Closed": "muted"
+}.get(value, "muted")) }}
+{%- endmacro %}
+
+{% macro invoice_status(value, overdue=False) -%}
+{% if overdue %}
+{{ status("Overdue", "bad") }}
+{% else %}
+{{ status(value, {
+    "Draft": "muted", "Confirmed": "info", "Sent": "info",
+    "Paid": "ok", "Cancelled": "muted"
+}.get(value, "muted")) }}
+{% endif %}
+{%- endmacro %}
+
+{% macro brand_mark(size=36) -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 36 36" aria-hidden="true">
+    <path d="M18 4A14 14 0 1 0 32 18" fill="none" stroke="#eba43a" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="32" cy="18" r="3.2" fill="#ffffff"/>
+</svg>
+{%- endmacro %}

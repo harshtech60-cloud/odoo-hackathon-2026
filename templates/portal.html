@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, notice, subscription_status, invoice_status %}
+{% block title %}My subscriptions{% endblock %}
+{% block content %}
+<header class="page-head">
+    <div>
+        <h1>Hello, {{ current_user['name'].split(' ')[0] }}</h1>
+        <p>Your subscriptions and invoices. You can pause, renew or close a subscription when its plan allows it.</p>
+    </div>
+</header>
+
+{{ notice(message=message, error=error) }}
+
+<div class="stack">
+    <dl class="figures">
+        <div class="figure">
+            <dt>Active subscriptions</dt>
+            <dd>{{ active_count }}</dd>
+        </div>
+        <div class="figure {{ 'figure--bad' if balance > 0 and overdue_count else '' }}">
+            <dt>Amount you owe</dt>
+            <dd>{{ balance|inr }}</dd>
+            <small>{% if overdue_count %}{{ overdue_count }} invoice{{ 's' if overdue_count != 1 }} overdue{% else %}Nothing overdue{% endif %}</small>
+        </div>
+    </dl>
+
+    <section>
+        <div class="section-head">
+            <h2>Subscriptions</h2>
+            <p>{{ subscriptions|length }} in total</p>
+        </div>
+        <div class="table-scroll">
+            <table class="ledger">
+                <thead>
+                    <tr>
+                        <th>Number</th>
+                        <th>Plan</th>
+                        <th>Status</th>
+                        <th>Term</th>
+                        <th class="num">Total per period</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in subscriptions %}
+                    <tr>
+                        <td class="strong">{{ s['subscription_number'] or ('#' ~ s['id']) }}</td>
+                        <td>{{ s['plan_name'] }}<br><span class="muted">Billed {{ s['billing_frequency'] }}</span></td>
+                        <td>{{ subscription_status(s['status']) }}</td>
+                        <td>{{ s['start_date'] }} to {{ s['expiry_date'] }}</td>
+                        <td class="num">{{ s['total_amount']|inr }}</td>
+                        <td>
+                            <div class="row-actions">
+                            {% set base = url_for('portal') ~ '/subscriptions/' ~ s['id'] %}
+                            {% if s['status'] == 'Active' and s['allow_pause'] %}
+                                <form method="post" action="{{ base }}/pause">{{ csrf() }}<button class="btn btn--ghost btn--small" type="submit">Pause</button></form>
+                            {% endif %}
+                            {% if s['status'] == 'Paused' %}
+                                <form method="post" action="{{ base }}/resume">{{ csrf() }}<button class="btn btn--ghost btn--small" type="submit">Resume</button></form>
+                            {% endif %}
+                            {% if s['status'] in ('Active', 'Paused') and s['allow_renewal'] %}
+                                <form method="post" action="{{ base }}/renew">{{ csrf() }}<button class="btn btn--ghost btn--small" type="submit">Renew</button></form>
+                            {% endif %}
+                            {% if s['status'] in ('Active', 'Paused') and (s['allow_early_close'] or s['expiry_date'] <= today) %}
+                                <form method="post" action="{{ base }}/close">{{ csrf() }}<button class="btn btn--danger btn--small" type="submit">Close</button></form>
+                            {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="empty">You have no subscriptions yet. Your sales contact will set one up for you.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <div class="section-head">
+            <h2>Invoices</h2>
+            <p>Issued invoices only</p>
+        </div>
+        <div class="table-scroll">
+            <table class="ledger">
+                <thead>
+                    <tr>
+                        <th>Invoice</th>
+                        <th>Subscription</th>
+                        <th>Billing period</th>
+                        <th>Due</th>
+                        <th>Status</th>
+                        <th class="num">Total</th>
+                        <th class="num">Balance</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for i in invoices %}
+                    {% set overdue = i['status'] == 'Confirmed' and i['due_date'] < today %}
+                    <tr>
+                        <td class="strong">{{ i['invoice_number'] }}</td>
+                        <td>{{ i['subscription_number'] }}</td>
+                        <td>{{ i['billing_period_start'] }} to {{ i['billing_period_end'] }}</td>
+                        <td>{{ i['due_date'] }}</td>
+                        <td>{{ invoice_status(i['status'], overdue) }}</td>
+                        <td class="num">{{ i['total_amount']|inr }}</td>
+                        <td class="num">{{ (i['total_amount'] - i['paid'])|inr if i['status'] != 'Paid' else '—' }}</td>
+                        <td class="num"><a href="{{ url_for('print_invoice', invoice_id=i['id']) }}">View</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="empty">No invoices have been issued to you yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

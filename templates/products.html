@@ -90,6 +90,7 @@
             </div>
 
             <form method="POST" action="{{ url_for('products') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div class="form-grid">
 
@@ -199,6 +200,7 @@
             <form method="POST"
                   action="{{ url_for('add_product_variant', product_id=0) }}"
                   id="variant-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div class="form-grid">
 

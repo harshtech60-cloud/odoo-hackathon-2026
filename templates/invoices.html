@@ -196,6 +196,7 @@
             <form method="POST"
                   action="{{ url_for('generate_due_invoices') }}"
                   onsubmit="return confirm('Are you sure you want to generate all due invoices?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <button type="submit" class="primary-button">
                     Generate Due Invoices
@@ -331,6 +332,7 @@
 
                                     <form method="POST"
                                           action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                         <input type="hidden"
                                                name="action"
@@ -354,6 +356,7 @@
 
                                     <form method="POST"
                                           action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                         <input type="hidden"
                                                name="action"
@@ -377,6 +380,7 @@
                                     <form method="POST"
                                           action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}"
                                           onsubmit="return confirm('Are you sure you want to cancel this invoice?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                         <input type="hidden"
                                                name="action"

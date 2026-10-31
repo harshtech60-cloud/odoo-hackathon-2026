@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, notice, status %}
+{% block title %}Staff{% endblock %}
+{% block content %}
+<header class="page-head">
+    <div>
+        <h1>Staff</h1>
+        <p>Staff handle customers, subscriptions, invoices and payments. Only an administrator can add them.</p>
+    </div>
+</header>
+
+{{ notice(message=message, error=error) }}
+
+<div class="stack">
+    <section class="panel">
+        <div class="section-head"><h2>Add a member of staff</h2></div>
+        <form method="post">
+            {{ csrf() }}
+            <div class="form-grid">
+                <div class="field">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" value="{{ form.name }}" required>
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" value="{{ form.email }}" required>
+                </div>
+                <div class="field">
+                    <label for="password">Starting password</label>
+                    <input type="password" id="password" name="password" autocomplete="new-password" required>
+                    <span class="hint">More than 8 characters, with an uppercase letter, a lowercase letter and a special character.</span>
+                </div>
+            </div>
+            <div class="form-actions"><button class="btn" type="submit">Add staff member</button></div>
+        </form>
+    </section>
+
+    <section>
+        <div class="section-head"><h2>Team</h2><p>{{ members|length }} accounts</p></div>
+        <div class="table-scroll">
+            <table class="ledger">
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                {% for member in members %}
+                    <tr>
+                        <td class="strong">{{ member['name'] }}</td>
+                        <td>{{ member['email'] }}</td>
+                        <td>{{ status(member['role']|capitalize, 'ok' if member['role'] == 'admin' else 'info') }}</td>
+                        <td class="muted">{{ member['created_at'][:10] }}</td>
+                        <td class="num">
+                            {% if member['role'] == 'staff' %}
+                            <form method="post" action="{{ url_for('auth.delete_staff', user_id=member['id']) }}">
+                                {{ csrf() }}
+                                <button class="btn btn--danger btn--small" type="submit">Remove</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -7,12 +7,38 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, abort, g, render_template, request, redirect, url_for
 
+from auth import init_auth
 from database import get_db_connection, init_db
 
 
 app = Flask(__name__)
+
+
+@app.template_filter("inr")
+def format_rupees(value):
+    """Format a number as rupees with Indian digit grouping."""
+
+    try:
+        amount = round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        amount = 0.0
+
+    sign = "-" if amount < 0 else ""
+    whole, _, fraction = f"{abs(amount):.2f}".partition(".")
+
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        whole = ",".join(groups + [tail])
+
+    return f"{sign}₹{whole}.{fraction}"
 
 
 # =====================================
@@ -842,6 +868,99 @@ def subscriptions():
 # SUBSCRIPTION STATUS MANAGEMENT
 # =============================================
 
+def change_subscription_status(
+    connection, subscription_id, action, customer_id=None
+):
+    """Move a subscription to its next state.
+
+    Returns (ok, message). When customer_id is given the subscription must
+    belong to that customer, so a customer can only act on their own.
+    """
+
+    subscription = connection.execute("""
+        SELECT
+            s.*,
+            p.allow_pause,
+            p.allow_early_close,
+            p.allow_renewal
+
+        FROM subscriptions s
+
+        JOIN subscription_plans p
+        ON p.id = s.plan_id
+
+        WHERE s.id = ?
+    """, (subscription_id,)).fetchone()
+
+    if not subscription or (
+        customer_id is not None
+        and subscription["customer_id"] != customer_id
+    ):
+        return False, "Subscription not found."
+
+    current_status = subscription["status"]
+    new_status = None
+    new_expiry = None
+
+    if action == "send_quotation" and current_status == "Draft":
+        new_status = "Quotation"
+
+    elif action == "confirm" and current_status == "Quotation":
+        new_status = "Confirmed"
+
+    elif action == "activate" and current_status == "Confirmed":
+        new_status = "Active"
+
+    elif action == "pause" and current_status == "Active":
+
+        if subscription["allow_pause"]:
+            new_status = "Paused"
+
+    elif action == "resume" and current_status == "Paused":
+        new_status = "Active"
+
+    elif action == "close" and current_status in ("Active", "Paused"):
+
+        expired = (
+            subscription["expiry_date"] <= date.today().isoformat()
+        )
+
+        if subscription["allow_early_close"] or expired:
+            new_status = "Closed"
+
+    elif action == "renew" and current_status in ("Active", "Paused"):
+
+        # Renewing repeats the original term once more
+        if subscription["allow_renewal"]:
+
+            start = date.fromisoformat(subscription["start_date"])
+            expiry = date.fromisoformat(subscription["expiry_date"])
+            term = max((expiry - start).days, 1)
+
+            new_status = current_status
+            new_expiry = (expiry + timedelta(days=term)).isoformat()
+
+    if new_status is None:
+        return False, "This status change is not permitted."
+
+    if new_expiry:
+        connection.execute("""
+            UPDATE subscriptions
+            SET status = ?, expiry_date = ?
+            WHERE id = ?
+        """, (new_status, new_expiry, subscription_id))
+    else:
+        connection.execute("""
+            UPDATE subscriptions
+            SET status = ?
+            WHERE id = ?
+        """, (new_status, subscription_id))
+
+    connection.commit()
+
+    return True, "Subscription updated."
+
+
 @app.route(
     "/subscriptions/<int:subscription_id>/status",
     methods=["POST"]
@@ -853,80 +972,19 @@ def update_subscription_status(subscription_id):
     connection = get_db_connection()
 
     try:
-
-        subscription = connection.execute("""
-            SELECT
-                s.*,
-                p.allow_pause,
-                p.allow_early_close
-
-            FROM subscriptions s
-
-            JOIN subscription_plans p
-            ON p.id = s.plan_id
-
-            WHERE s.id = ?
-
-        """, (subscription_id,)).fetchone()
-
-        if not subscription:
-            return redirect(
-                url_for("subscriptions", error="Subscription not found.")
-            )
-
-        current_status = subscription["status"]
-        new_status = None
-
-        if action == "send_quotation" and current_status == "Draft":
-            new_status = "Quotation"
-
-        elif action == "confirm" and current_status == "Quotation":
-            new_status = "Confirmed"
-
-        elif action == "activate" and current_status == "Confirmed":
-            new_status = "Active"
-
-        elif action == "pause" and current_status == "Active":
-
-            if subscription["allow_pause"]:
-                new_status = "Paused"
-
-        elif action == "resume" and current_status == "Paused":
-            new_status = "Active"
-
-        elif action == "close" and current_status in ("Active", "Paused"):
-
-            expired = (
-                subscription["expiry_date"] <= date.today().isoformat()
-            )
-
-            if subscription["allow_early_close"] or expired:
-                new_status = "Closed"
-
-        if new_status is None:
-
-            return redirect(
-                url_for(
-                    "subscriptions",
-                    error="This status change is not permitted."
-                )
-            )
-
-        connection.execute("""
-            UPDATE subscriptions
-            SET status = ?
-            WHERE id = ?
-        """, (new_status, subscription_id))
-
-        connection.commit()
-
+        ok, message = change_subscription_status(
+            connection, subscription_id, action
+        )
     finally:
         connection.close()
 
-    return redirect(
-        url_for("subscriptions", updated="1")
-    )
-    # =====================================
+    if not ok:
+        return redirect(url_for("subscriptions", error=message))
+
+    return redirect(url_for("subscriptions", updated="1"))
+
+
+# =====================================
 # BILLING DATE HELPERS
 # =====================================
 
@@ -1678,7 +1736,14 @@ def print_invoice(invoice_id):
         """, (invoice_id,)).fetchone()
 
         if not invoice:
-            return "Invoice not found.", 404
+            abort(404)
+
+        # A customer may only open their own invoices once issued
+        if g.user["role"] == "customer" and (
+            invoice["customer_id"] != g.user["customer_id"]
+            or invoice["status"] in ("Draft", "Cancelled")
+        ):
+            abort(404)
 
         lines = connection.execute("""
             SELECT *
@@ -2261,8 +2326,115 @@ def delete_discount(discount_id):
     ))
 
 
+# =====================================
+# CUSTOMER PORTAL
+# =====================================
+
+@app.route("/portal")
+def portal():
+
+    customer_id = g.user["customer_id"]
+    today = date.today().isoformat()
+
+    connection = get_db_connection()
+
+    try:
+        subscription_list = connection.execute("""
+            SELECT
+                s.*,
+                p.name AS plan_name,
+                p.billing_frequency,
+                p.allow_pause,
+                p.allow_early_close,
+                p.allow_renewal
+
+            FROM subscriptions s
+
+            JOIN subscription_plans p
+            ON p.id = s.plan_id
+
+            WHERE s.customer_id = ?
+              AND s.status != 'Draft'
+
+            ORDER BY s.id DESC
+        """, (customer_id,)).fetchall()
+
+        invoice_list = connection.execute("""
+            SELECT
+                i.*,
+                s.subscription_number,
+                COALESCE((
+                    SELECT SUM(p.amount)
+                    FROM payments p
+                    WHERE p.invoice_id = i.id
+                      AND p.status = 'Completed'
+                ), 0) AS paid
+
+            FROM invoices i
+
+            JOIN subscriptions s
+            ON s.id = i.subscription_id
+
+            WHERE i.customer_id = ?
+              AND i.status IN ('Confirmed', 'Paid')
+
+            ORDER BY i.id DESC
+        """, (customer_id,)).fetchall()
+
+    finally:
+        connection.close()
+
+    owed = [
+        i for i in invoice_list if i["status"] == "Confirmed"
+    ]
+
+    return render_template(
+        "portal.html",
+        subscriptions=subscription_list,
+        invoices=invoice_list,
+        active_count=sum(
+            1 for s in subscription_list if s["status"] == "Active"
+        ),
+        balance=sum(i["total_amount"] - i["paid"] for i in owed),
+        overdue_count=sum(1 for i in owed if i["due_date"] < today),
+        today=today,
+        message=request.args.get("message"),
+        error=request.args.get("error")
+    )
+
+
+@app.route(
+    "/portal/subscriptions/<int:subscription_id>/<action>",
+    methods=["POST"]
+)
+def portal_subscription_action(subscription_id, action):
+
+    # Customers can pause, resume, renew and close, nothing else
+    if action not in ("pause", "resume", "renew", "close"):
+        abort(404)
+
+    connection = get_db_connection()
+
+    try:
+        ok, message = change_subscription_status(
+            connection,
+            subscription_id,
+            action,
+            customer_id=g.user["customer_id"]
+        )
+    finally:
+        connection.close()
+
+    if not ok:
+        return redirect(url_for("portal", error=message))
+
+    return redirect(url_for("portal", message="Your subscription was updated."))
+
+
+
 # Create tables on startup so the app also works under gunicorn
 init_db()
+init_auth(app)
 
 
 if __name__ == "__main__":

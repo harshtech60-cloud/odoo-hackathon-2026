@@ -298,6 +298,7 @@
         <form action="{{ url_for('add_discount') }}"
               method="POST"
               class="discount-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="discount-field">
                 <label for="code">Discount Code *</label>
@@ -507,6 +508,7 @@
 
                                 <form method="POST"
                                       action="{{ url_for('toggle_discount', discount_id=discount['id']) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                     <button type="submit"
                                             class="toggle-button">
@@ -524,6 +526,7 @@
                                 <form method="POST"
                                       action="{{ url_for('delete_discount', discount_id=discount['id']) }}"
                                       onsubmit="return confirm('Are you sure you want to delete this discount?');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                     <button type="submit"
                                             class="delete-button">

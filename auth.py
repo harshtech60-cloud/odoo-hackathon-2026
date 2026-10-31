@@ -1,89 +1,107 @@
-"""Accounts, roles, sessions, CSRF protection and the customer portal.
+"""Login, roles, password rules, reset links and staff management.
 
 Roles
 -----
-admin     Controls the whole system. The only role that can add staff,
-          products, plans and discount rules.
-staff     Day-to-day work: customers, subscriptions, invoices, payments.
-customer  Sees only their own subscriptions and invoices (portal).
+admin     Controls the whole system and is the only one who can add staff,
+          products, plans and discounts.
+staff     Day-to-day work: customers, subscriptions, invoices, payments and
+          reports. Can look at products, plans and discounts but not change
+          them.
+customer  Uses the portal to see and manage their own subscriptions and
+          invoices. Cannot see anything that belongs to someone else.
 """
 
 import hashlib
-import logging
 import os
 import re
 import secrets
 import smtplib
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse
 
 from flask import (
-    abort, flash, g, redirect, render_template, request,
+    Blueprint, abort, current_app, g, redirect, render_template, request,
     session, url_for
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db_connection
 
-log = logging.getLogger("brightloop.auth")
+auth = Blueprint("auth", __name__)
 
-# ---------------------------------------------------------------------
-# Access rules (endpoint names are the Flask view function names)
-# ---------------------------------------------------------------------
+ADMIN = ("admin",)
+TEAM = ("admin", "staff")
+CUSTOMER = ("customer",)
+EVERYONE = ("admin", "staff", "customer")
 
-PUBLIC_ENDPOINTS = {
-    "static", "login", "register", "forgot_password", "reset_password"
+# endpoint -> (roles that may view it, roles that may change things)
+# Anything not listed here is refused, so new pages are private by default.
+ACCESS = {
+    "dashboard": (TEAM, TEAM),
+    "customers": (TEAM, TEAM),
+    "products": (TEAM, ADMIN),
+    "add_product_variant": (ADMIN, ADMIN),
+    "plans": (TEAM, ADMIN),
+    "subscriptions": (TEAM, TEAM),
+    "create_quotation_template": (ADMIN, ADMIN),
+    "delete_quotation_template": (ADMIN, ADMIN),
+    "update_subscription_status": (TEAM, TEAM),
+    "invoices": (TEAM, TEAM),
+    "generate_due_invoices": (TEAM, TEAM),
+    "invoice_action": (TEAM, TEAM),
+    "print_invoice": (EVERYONE, EVERYONE),
+    "payments": (TEAM, TEAM),
+    "add_payment": (TEAM, TEAM),
+    "reports": (TEAM, TEAM),
+    "discounts": (TEAM, ADMIN),
+    "add_discount": (ADMIN, ADMIN),
+    "toggle_discount": (ADMIN, ADMIN),
+    "delete_discount": (ADMIN, ADMIN),
+    "portal": (CUSTOMER, CUSTOMER),
+    "portal_subscription_action": (CUSTOMER, CUSTOMER),
+    "auth.staff": (ADMIN, ADMIN),
+    "auth.delete_staff": (ADMIN, ADMIN),
+    "auth.account": (EVERYONE, EVERYONE),
+    "auth.logout": (EVERYONE, EVERYONE),
 }
 
-# Endpoints a customer may use (their own data only, checked below)
-CUSTOMER_ENDPOINTS = {
-    "portal", "print_invoice", "update_subscription_status", "logout"
+# Pages anyone can open without signing in
+PUBLIC = {
+    "static",
+    "auth.login",
+    "auth.register",
+    "auth.forgot_password",
+    "auth.reset_password",
 }
 
-# Customers may only do these things to their own subscription
-CUSTOMER_SUBSCRIPTION_ACTIONS = {"pause", "resume", "close"}
-
-# Pages only the admin may open
-ADMIN_ONLY_ENDPOINTS = {"staff", "create_staff", "toggle_staff"}
-
-# Pages staff can read, but only the admin may change
-ADMIN_WRITE_ENDPOINTS = {
-    "products", "add_product_variant", "plans",
-    "add_discount", "toggle_discount", "delete_discount",
-    "quotation_templates", "add_quotation_template",
-    "delete_quotation_template",
-}
-
-PASSWORD_RULE = (
-    "Use more than 8 characters, with an uppercase letter, "
-    "a lowercase letter and a special character."
-)
-
-RESET_LINK_MINUTES = 60
-MAX_LOGIN_ATTEMPTS = 6
-LOGIN_WINDOW_SECONDS = 600
-
-_login_attempts = {}
+RESET_MINUTES = 60
+MAX_FAILED_LOGINS = 5
+LOCKOUT_SECONDS = 300
+_failed_logins = {}
 
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------------
+# Password rules
+# ---------------------------------------------------------------
 
-def validate_password(password):
-    """Return an error message, or None when the password is acceptable."""
+def password_problem(password):
+    """Return a message when the password breaks the rules, else None."""
 
-    if (
-        len(password) <= 8
-        or not re.search(r"[A-Z]", password)
-        or not re.search(r"[a-z]", password)
-        or not re.search(r"[^A-Za-z0-9\s]", password)
-    ):
-        return PASSWORD_RULE
+    if len(password) <= 8:
+        return "Password must be more than 8 characters."
+
+    if not re.search(r"[A-Z]", password):
+        return "Password needs at least one uppercase letter."
+
+    if not re.search(r"[a-z]", password):
+        return "Password needs at least one lowercase letter."
+
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Password needs at least one special character, such as ! or @."
 
     return None
 
@@ -92,40 +110,19 @@ def valid_email(email):
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
 
 
-def hash_token(token):
-    return hashlib.sha256(token.encode()).hexdigest()
+# ---------------------------------------------------------------
+# Secret key and CSRF
+# ---------------------------------------------------------------
 
+def load_secret_key():
+    """Use SECRET_KEY if set, else keep a random key in a local file."""
 
-def safe_next(target):
-    """Only allow redirects back to this site."""
+    configured = os.environ.get("SECRET_KEY")
 
-    if not target:
-        return None
+    if configured:
+        return configured
 
-    parsed = urlparse(target)
-
-    if parsed.scheme or parsed.netloc or not target.startswith("/"):
-        return None
-
-    if target.startswith("//"):
-        return None
-
-    return target
-
-
-def home_for(role):
-    return url_for("portal") if role == "customer" else url_for("dashboard")
-
-
-def get_secret_key(base_dir):
-    """Use SECRET_KEY if set, otherwise create and reuse a key file."""
-
-    env_key = os.environ.get("SECRET_KEY")
-
-    if env_key:
-        return env_key
-
-    key_file = Path(base_dir) / ".secret_key"
+    key_file = Path(__file__).resolve().parent / ".secret_key"
 
     try:
         if key_file.exists():
@@ -133,669 +130,621 @@ def get_secret_key(base_dir):
 
         key = secrets.token_hex(32)
         key_file.write_text(key)
-
-        try:
-            key_file.chmod(0o600)
-        except OSError:
-            pass
-
         return key
 
     except OSError:
-        # Read-only disk: fall back to a per-process key
+        # Read-only disk: sessions then reset when the app restarts.
         return secrets.token_hex(32)
 
 
-def too_many_attempts(key):
-    now = time.time()
+def csrf_token():
+    """Return this session's CSRF token, creating it if needed."""
 
-    recent = [
-        t for t in _login_attempts.get(key, [])
-        if now - t < LOGIN_WINDOW_SECONDS
-    ]
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
 
-    _login_attempts[key] = recent
-
-    return len(recent) >= MAX_LOGIN_ATTEMPTS
+    return session["csrf"]
 
 
-def record_failed_attempt(key):
-    _login_attempts.setdefault(key, []).append(time.time())
+# ---------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------
 
-
-def send_reset_email(to_email, link):
-    """Email the reset link, or print it when SMTP is not configured."""
-
-    host = os.environ.get("SMTP_HOST")
-
-    if not host:
-        log.warning(
-            "SMTP is not configured. Password reset link for %s: %s",
-            to_email, link
-        )
-        print(f"[Brightloop] Password reset link for {to_email}: {link}")
-        return
-
-    message = EmailMessage()
-    message["Subject"] = "Reset your Brightloop password"
-    message["From"] = os.environ.get(
-        "SMTP_FROM", "no-reply@brightloop.example"
-    )
-    message["To"] = to_email
-    message.set_content(
-        "We received a request to reset your Brightloop password.\n\n"
-        f"Open this link within {RESET_LINK_MINUTES} minutes:\n{link}\n\n"
-        "If you did not ask for this, you can ignore this email."
-    )
-
-    port = int(os.environ.get("SMTP_PORT", "587"))
-
-    try:
-        with smtplib.SMTP(host, port, timeout=10) as server:
-            server.starttls()
-
-            user = os.environ.get("SMTP_USER")
-
-            if user:
-                server.login(user, os.environ.get("SMTP_PASSWORD", ""))
-
-            server.send_message(message)
-
-    except (OSError, smtplib.SMTPException):
-        log.exception("Could not send reset email to %s", to_email)
-
-
-def ensure_admin():
-    """Create the first admin account when none exists."""
+def get_user_by_id(user_id):
 
     connection = get_db_connection()
 
     try:
-        exists = connection.execute(
-            "SELECT 1 FROM users WHERE role = 'admin' LIMIT 1"
+        return connection.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
         ).fetchone()
+    finally:
+        connection.close()
 
-        if exists:
+
+def get_user_by_email(email):
+
+    connection = get_db_connection()
+
+    try:
+        return connection.execute(
+            "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def create_user(connection, name, email, password, role, customer_id=None):
+    """Insert a user. Raises sqlite3.IntegrityError for a repeated email."""
+
+    cursor = connection.execute("""
+        INSERT INTO users (name, email, password_hash, role, customer_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        name.strip(),
+        email.strip().lower(),
+        generate_password_hash(password),
+        role,
+        customer_id
+    ))
+
+    return cursor.lastrowid
+
+
+def ensure_first_admin():
+    """Create the first admin account when the system has none.
+
+    Set ADMIN_EMAIL and ADMIN_PASSWORD to choose the details. Without a
+    password, a random one is generated and printed once.
+    """
+
+    connection = get_db_connection()
+
+    try:
+        existing = connection.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+        ).fetchone()[0]
+
+        if existing:
             return
 
         email = os.environ.get("ADMIN_EMAIL", "admin@brightloop.com")
         password = os.environ.get("ADMIN_PASSWORD")
+        generated = False
 
-        if not password:
-            password = "Admin@12345"
-            log.warning(
-                "Created demo admin %s with the default password. "
-                "Set ADMIN_EMAIL and ADMIN_PASSWORD before real use.",
-                email
+        if not password or password_problem(password):
+            password = "Bl-" + secrets.token_urlsafe(9) + "a1"
+            generated = True
+
+        try:
+            create_user(connection, "Administrator", email, password, "admin")
+            connection.commit()
+        except sqlite3.IntegrityError:
+            return
+
+        if generated:
+            print(
+                "\n  First admin account created\n"
+                f"    email:    {email}\n"
+                f"    password: {password}\n"
+                "  Sign in and change the password from Account.\n",
+                flush=True
             )
-
-        connection.execute("""
-            INSERT INTO users (name, email, password_hash, role)
-            VALUES (?, ?, ?, 'admin')
-        """, ("Administrator", email.lower(),
-              generate_password_hash(password)))
-
-        connection.commit()
 
     finally:
         connection.close()
 
 
-def login_user(user_id):
-    session.clear()
-    session["uid"] = user_id
-    session["csrf"] = secrets.token_urlsafe(24)
-    session.permanent = True
+# ---------------------------------------------------------------
+# Email for reset links
+# ---------------------------------------------------------------
+
+def send_email(to_address, subject, body):
+    """Send through SMTP when configured. Returns True when sent."""
+
+    host = os.environ.get("SMTP_HOST")
+
+    if not host:
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = os.environ.get(
+        "SMTP_FROM", os.environ.get("SMTP_USER", "no-reply@brightloop.local")
+    )
+    message["To"] = to_address
+    message.set_content(body)
+
+    try:
+        with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587")),
+                          timeout=15) as server:
+            server.starttls()
+
+            if os.environ.get("SMTP_USER"):
+                server.login(
+                    os.environ["SMTP_USER"],
+                    os.environ.get("SMTP_PASSWORD", "")
+                )
+
+            server.send_message(message)
+
+        return True
+
+    except (OSError, smtplib.SMTPException):
+        current_app.logger.exception("Could not send reset email")
+        return False
 
 
-# ---------------------------------------------------------------------
-# Wiring
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------------
+# Hooks registered on the app
+# ---------------------------------------------------------------
 
-def register_auth(app):
+def init_auth(app):
+    """Attach sessions, CSRF checks and role checks to the Flask app."""
 
+    app.secret_key = load_secret_key()
     app.config.update(
-        SECRET_KEY=get_secret_key(app.root_path),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
-        PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+        SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE") == "1",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     )
 
-    # ---------------- CSRF ----------------
-
-    def csrf_token():
-        if "csrf" not in session:
-            session["csrf"] = secrets.token_urlsafe(24)
-        return session["csrf"]
-
+    app.register_blueprint(auth)
     app.jinja_env.globals["csrf_token"] = csrf_token
 
-    # ---------------- Request guard ----------------
-
     @app.before_request
-    def guard():
+    def load_user_and_check_access():
 
-        # Load the signed-in user
         g.user = None
 
-        user_id = session.get("uid")
+        user_id = session.get("user_id")
 
         if user_id:
-            connection = get_db_connection()
+            g.user = get_user_by_id(user_id)
 
-            try:
-                row = connection.execute("""
-                    SELECT id, name, email, role, customer_id, is_active
-                    FROM users WHERE id = ?
-                """, (user_id,)).fetchone()
-            finally:
-                connection.close()
-
-            if row and row["is_active"]:
-                g.user = dict(row)
-            else:
+            if g.user is None:
                 session.clear()
 
-        # CSRF check on every form post
+        # CSRF: every form that changes data must carry the token
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+
             sent = request.form.get("csrf_token", "")
             expected = session.get("csrf", "")
 
             if not expected or not secrets.compare_digest(sent, expected):
-                abort(400, description="Your session expired. Reload the page and try again.")
+                abort(400, "Your session expired. Reload the page and try again.")
 
         endpoint = request.endpoint
 
-        if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+        if endpoint is None or endpoint in PUBLIC:
             return None
 
         if g.user is None:
-            return redirect(url_for("login", next=request.full_path.rstrip("?")))
+            return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
 
-        role = g.user["role"]
+        rule = ACCESS.get(endpoint)
 
-        # ----- customers: own data only -----
-        if role == "customer":
+        if rule is None:
+            abort(403)
 
-            if endpoint == "dashboard":
+        view_roles, change_roles = rule
+        roles = view_roles if request.method in ("GET", "HEAD") else change_roles
+
+        if g.user["role"] not in roles:
+
+            # A customer who opens a team page goes to their portal
+            if g.user["role"] == "customer" and request.method == "GET":
                 return redirect(url_for("portal"))
 
-            if endpoint not in CUSTOMER_ENDPOINTS:
-                abort(403)
-
-            return check_customer_ownership(endpoint)
-
-        # ----- staff and admin -----
-        if endpoint == "portal":
-            return redirect(url_for("dashboard"))
-
-        if role != "admin":
-
-            if endpoint in ADMIN_ONLY_ENDPOINTS:
-                abort(403)
-
-            if (
-                endpoint in ADMIN_WRITE_ENDPOINTS
-                and request.method != "GET"
-            ):
-                abort(403)
-
-        return None
-
-    def check_customer_ownership(endpoint):
-        customer_id = g.user["customer_id"]
-        args = request.view_args or {}
-
-        connection = get_db_connection()
-
-        try:
-            if endpoint == "print_invoice":
-                row = connection.execute(
-                    "SELECT customer_id FROM invoices WHERE id = ?",
-                    (args.get("invoice_id"),)
-                ).fetchone()
-
-                if not row or row["customer_id"] != customer_id:
-                    abort(404)
-
-            elif endpoint == "update_subscription_status":
-                row = connection.execute(
-                    "SELECT customer_id FROM subscriptions WHERE id = ?",
-                    (args.get("subscription_id"),)
-                ).fetchone()
-
-                if not row or row["customer_id"] != customer_id:
-                    abort(404)
-
-                if (
-                    request.form.get("action")
-                    not in CUSTOMER_SUBSCRIPTION_ACTIONS
-                ):
-                    abort(403)
-        finally:
-            connection.close()
+            abort(403)
 
         return None
 
     @app.context_processor
     def inject_user():
-        return {"current_user": getattr(g, "user", None)}
+        return {"current_user": g.get("user")}
 
     @app.after_request
     def security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
-
-        # Pages show private billing data, so keep them out of caches
-        if request.endpoint != "static":
+        # Pages show account data, so browsers should not keep copies
+        if g.get("user"):
             response.headers.setdefault("Cache-Control", "no-store")
-
         return response
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return render_template(
+            "error.html", code=400, title="Request not accepted",
+            message=getattr(error, "description", "")
+        ), 400
 
     @app.errorhandler(403)
     def forbidden(error):
         return render_template(
-            "error.html", code=403,
-            title="You do not have access to this page",
-            text="Ask an administrator if you need it."
+            "error.html", code=403, title="You don't have access to this page",
+            message="Ask an administrator if you need this permission."
         ), 403
 
     @app.errorhandler(404)
     def not_found(error):
         return render_template(
-            "error.html", code=404,
-            title="We could not find that page",
-            text="The link may be old, or the record may not exist."
+            "error.html", code=404, title="Page not found",
+            message="Check the address, or go back to the dashboard."
         ), 404
 
-    @app.errorhandler(400)
-    def bad_request(error):
-        return render_template(
-            "error.html", code=400,
-            title="That request could not be processed",
-            text=getattr(error, "description", "")
-        ), 400
+    with app.app_context():
+        ensure_first_admin()
 
-    # ---------------- Sign in / out ----------------
 
-    @app.route("/login", methods=["GET", "POST"])
-    def login():
+def home_for(user):
+    """Where a person lands after signing in."""
 
-        if g.user:
-            return redirect(home_for(g.user["role"]))
+    return url_for("portal") if user["role"] == "customer" else url_for("dashboard")
 
-        error = None
-        email = ""
 
-        if request.method == "POST":
-            email = request.form.get("email", "").strip().lower()
-            password = request.form.get("password", "")
-            key = (request.remote_addr, email)
+def safe_next(target):
+    """Only follow redirects that stay on this site."""
 
-            if too_many_attempts(key):
-                error = "Too many attempts. Wait a few minutes and try again."
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
 
-            else:
-                connection = get_db_connection()
+    return None
 
-                try:
-                    user = connection.execute(
-                        "SELECT * FROM users WHERE email = ?", (email,)
-                    ).fetchone()
-                finally:
-                    connection.close()
 
-                # Always run a hash check so timing does not reveal accounts
-                stored = user["password_hash"] if user else generate_password_hash("x")
-                ok = check_password_hash(stored, password)
+# ---------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------
 
-                if user and ok and user["is_active"]:
-                    login_user(user["id"])
-                    target = safe_next(request.args.get("next"))
-                    return redirect(target or home_for(user["role"]))
+@auth.route("/login", methods=["GET", "POST"])
+def login():
 
-                record_failed_attempt(key)
+    if g.user:
+        return redirect(home_for(g.user))
 
-                if user and ok and not user["is_active"]:
-                    error = "This account has been deactivated."
-                else:
-                    error = "The email or password is not correct."
+    error = None
+    email = ""
 
-        return render_template("login.html", error=error, email=email)
+    if request.method == "POST":
 
-    @app.route("/logout", methods=["POST"])
-    def logout():
-        session.clear()
-        return redirect(url_for("login"))
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        key = (email, request.remote_addr)
 
-    # ---------------- Customer sign up ----------------
+        attempts = [
+            moment for moment in _failed_logins.get(key, [])
+            if time.time() - moment < LOCKOUT_SECONDS
+        ]
+        _failed_logins[key] = attempts
 
-    @app.route("/register", methods=["GET", "POST"])
-    def register():
+        if len(attempts) >= MAX_FAILED_LOGINS:
+            error = "Too many failed sign-ins. Wait five minutes and try again."
 
-        if g.user:
-            return redirect(home_for(g.user["role"]))
+        else:
+            user = get_user_by_email(email) if email else None
 
-        error = None
-        form = {"name": "", "email": "", "company": "", "phone": ""}
+            # Compare against a dummy hash so timing does not reveal accounts
+            hash_to_check = user["password_hash"] if user else generate_password_hash("x")
 
-        if request.method == "POST":
-            form = {
-                key: request.form.get(key, "").strip()
-                for key in form
-            }
-            form["email"] = form["email"].lower()
-            password = request.form.get("password", "")
-            confirm = request.form.get("confirm", "")
+            if user and check_password_hash(hash_to_check, password):
 
-            if not form["name"] or not form["email"]:
-                error = "Your name and email are required."
+                _failed_logins.pop(key, None)
+                session.clear()
+                session["user_id"] = user["id"]
+                session.permanent = True
 
-            elif not valid_email(form["email"]):
-                error = "Enter a valid email address."
+                return redirect(
+                    safe_next(request.args.get("next")) or home_for(user)
+                )
 
-            elif validate_password(password):
-                error = validate_password(password)
+            _failed_logins[key].append(time.time())
+            error = "Email or password is incorrect."
 
-            elif password != confirm:
-                error = "The two passwords do not match."
+    return render_template("login.html", error=error, email=email)
 
-            else:
-                connection = get_db_connection()
 
-                try:
-                    taken = connection.execute(
-                        "SELECT 1 FROM users WHERE email = ?",
-                        (form["email"],)
-                    ).fetchone()
+@auth.route("/logout", methods=["POST"])
+def logout():
 
-                    if taken:
-                        error = "An account with this email already exists."
+    session.clear()
 
-                    else:
-                        # Reuse the customer record staff already created
-                        customer = connection.execute(
-                            "SELECT id FROM customers WHERE email = ?",
-                            (form["email"],)
-                        ).fetchone()
+    return redirect(url_for("auth.login"))
 
-                        if customer:
-                            customer_id = customer["id"]
-                        else:
-                            customer_id = connection.execute("""
-                                INSERT INTO customers
-                                    (name, email, company, phone)
-                                VALUES (?, ?, ?, ?)
-                            """, (form["name"], form["email"],
-                                  form["company"], form["phone"])
-                            ).lastrowid
 
-                        user_id = connection.execute("""
-                            INSERT INTO users
-                                (name, email, password_hash, role, customer_id)
-                            VALUES (?, ?, ?, 'customer', ?)
-                        """, (form["name"], form["email"],
-                              generate_password_hash(password),
-                              customer_id)).lastrowid
+@auth.route("/register", methods=["GET", "POST"])
+def register():
 
-                        connection.commit()
+    if g.user:
+        return redirect(home_for(g.user))
 
-                        login_user(user_id)
-                        return redirect(url_for("portal"))
-                finally:
-                    connection.close()
+    error = None
+    form = {"name": "", "email": ""}
 
-        return render_template(
-            "register.html", error=error, form=form,
-            password_rule=PASSWORD_RULE
-        )
+    if request.method == "POST":
 
-    # ---------------- Password reset ----------------
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        company = request.form.get("company", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+        form = {"name": name, "email": email, "company": company}
 
-    @app.route("/forgot-password", methods=["GET", "POST"])
-    def forgot_password():
+        if not name or not email:
+            error = "Name and email are required."
 
-        sent = False
+        elif not valid_email(email):
+            error = "Enter a valid email address."
 
-        if request.method == "POST":
-            email = request.form.get("email", "").strip().lower()
+        elif password != confirm:
+            error = "The two passwords do not match."
+
+        else:
+            error = password_problem(password)
+
+        if error is None:
 
             connection = get_db_connection()
 
             try:
-                user = connection.execute(
-                    "SELECT id, email FROM users WHERE email = ? AND is_active = 1",
-                    (email,)
-                ).fetchone()
+                if connection.execute(
+                    "SELECT 1 FROM users WHERE email = ?", (email,)
+                ).fetchone():
+                    error = "An account with this email already exists."
 
-                if user:
-                    token = secrets.token_urlsafe(32)
-                    expires = (
-                        datetime.utcnow()
-                        + timedelta(minutes=RESET_LINK_MINUTES)
-                    ).isoformat()
+                else:
+                    # Link to a customer record the team already created
+                    customer = connection.execute("""
+                        SELECT c.id FROM customers c
+                        WHERE c.email = ?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM users u WHERE u.customer_id = c.id
+                          )
+                    """, (email,)).fetchone()
 
-                    connection.execute("""
-                        INSERT INTO password_resets
-                            (user_id, token_hash, expires_at)
-                        VALUES (?, ?, ?)
-                    """, (user["id"], hash_token(token), expires))
+                    if customer:
+                        customer_id = customer["id"]
+                    else:
+                        customer_id = connection.execute("""
+                            INSERT INTO customers (name, email, company)
+                            VALUES (?, ?, ?)
+                        """, (name, email, company)).lastrowid
+
+                    user_id = create_user(
+                        connection, name, email, password, "customer", customer_id
+                    )
                     connection.commit()
 
-                    link = url_for(
-                        "reset_password", token=token, _external=True
-                    )
-                    send_reset_email(user["email"], link)
+                    session.clear()
+                    session["user_id"] = user_id
+                    session.permanent = True
+
+                    return redirect(url_for("portal"))
+
+            except sqlite3.IntegrityError:
+                connection.rollback()
+                error = "An account with this email already exists."
+
             finally:
                 connection.close()
 
-            # Same answer whether or not the email exists
-            sent = True
+    return render_template("register.html", error=error, form=form)
 
-        return render_template("forgot_password.html", sent=sent)
 
-    @app.route("/reset-password/<token>", methods=["GET", "POST"])
-    def reset_password(token):
+@auth.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
 
-        connection = get_db_connection()
+    sent = False
+    demo_link = None
 
-        try:
-            reset = connection.execute("""
-                SELECT * FROM password_resets
-                WHERE token_hash = ? AND used = 0
-            """, (hash_token(token),)).fetchone()
+    if request.method == "POST":
 
-            valid = bool(
-                reset
-                and datetime.fromisoformat(reset["expires_at"])
-                > datetime.utcnow()
+        email = request.form.get("email", "").strip().lower()
+        user = get_user_by_email(email) if email else None
+
+        if user:
+
+            token = secrets.token_urlsafe(32)
+            expires = (
+                datetime.utcnow() + timedelta(minutes=RESET_MINUTES)
+            ).isoformat(timespec="seconds")
+
+            connection = get_db_connection()
+
+            try:
+                # Only a hash of the token is stored
+                connection.execute("""
+                    UPDATE users
+                    SET reset_token_hash = ?, reset_expires = ?
+                    WHERE id = ?
+                """, (hashlib.sha256(token.encode()).hexdigest(), expires, user["id"]))
+                connection.commit()
+            finally:
+                connection.close()
+
+            link = url_for("auth.reset_password", token=token, _external=True)
+
+            delivered = send_email(
+                user["email"],
+                "Reset your Brightloop password",
+                f"Hello {user['name']},\n\n"
+                f"Use this link to choose a new password. It works for "
+                f"{RESET_MINUTES} minutes:\n\n{link}\n\n"
+                "If you did not ask for this, ignore this email."
             )
 
-            error = None
+            if not delivered:
+                current_app.logger.warning("Password reset link for %s: %s", user["email"], link)
 
-            if valid and request.method == "POST":
-                password = request.form.get("password", "")
-                confirm = request.form.get("confirm", "")
+                # Showing the link on screen lets anyone reset any account,
+                # so it is limited to demo mode.
+                if os.environ.get("DEMO_MODE") == "1":
+                    demo_link = link
 
-                if validate_password(password):
-                    error = validate_password(password)
+        # The same answer whether or not the account exists
+        sent = True
 
-                elif password != confirm:
-                    error = "The two passwords do not match."
+    return render_template("forgot_password.html", sent=sent, demo_link=demo_link)
 
-                else:
-                    connection.execute(
-                        "UPDATE users SET password_hash = ? WHERE id = ?",
-                        (generate_password_hash(password), reset["user_id"])
-                    )
-                    connection.execute(
-                        "UPDATE password_resets SET used = 1 WHERE user_id = ?",
-                        (reset["user_id"],)
-                    )
-                    connection.commit()
 
-                    flash("Your password was changed. Sign in with it now.")
-                    return redirect(url_for("login"))
+@auth.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
 
-            return render_template(
-                "reset_password.html", valid=valid, error=error,
-                password_rule=PASSWORD_RULE
-            )
-        finally:
-            connection.close()
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
 
-    # ---------------- Staff management (admin) ----------------
+    connection = get_db_connection()
 
-    @app.route("/staff")
-    def staff():
+    try:
+        user = connection.execute("""
+            SELECT * FROM users
+            WHERE reset_token_hash = ?
+        """, (token_hash,)).fetchone()
 
-        connection = get_db_connection()
-
-        try:
-            members = connection.execute("""
-                SELECT id, name, email, role, is_active, created_at
-                FROM users
-                WHERE role IN ('admin', 'staff')
-                ORDER BY role, name
-            """).fetchall()
-        finally:
-            connection.close()
-
-        return render_template(
-            "staff.html", members=members,
-            password_rule=PASSWORD_RULE,
-            error=request.args.get("error"),
-            message=request.args.get("message")
+        valid = bool(
+            user
+            and user["reset_expires"]
+            and user["reset_expires"] >= datetime.utcnow().isoformat(timespec="seconds")
         )
 
-    @app.route("/staff/add", methods=["POST"])
-    def create_staff():
+        error = None
+
+        if valid and request.method == "POST":
+
+            password = request.form.get("password", "")
+
+            if password != request.form.get("confirm", ""):
+                error = "The two passwords do not match."
+            else:
+                error = password_problem(password)
+
+            if error is None:
+                connection.execute("""
+                    UPDATE users
+                    SET password_hash = ?, reset_token_hash = NULL,
+                        reset_expires = NULL
+                    WHERE id = ?
+                """, (generate_password_hash(password), user["id"]))
+                connection.commit()
+
+                return render_template("reset_password.html", done=True, valid=True, error=None)
+
+        return render_template("reset_password.html", done=False, valid=valid, error=error)
+
+    finally:
+        connection.close()
+
+
+@auth.route("/account", methods=["GET", "POST"])
+def account():
+
+    error = None
+    message = None
+
+    if request.method == "POST":
+
+        current = request.form.get("current_password", "")
+        new = request.form.get("new_password", "")
+
+        if not check_password_hash(g.user["password_hash"], current):
+            error = "Your current password is not correct."
+
+        elif new != request.form.get("confirm", ""):
+            error = "The two new passwords do not match."
+
+        else:
+            error = password_problem(new)
+
+        if error is None:
+
+            connection = get_db_connection()
+
+            try:
+                connection.execute("""
+                    UPDATE users SET password_hash = ? WHERE id = ?
+                """, (generate_password_hash(new), g.user["id"]))
+                connection.commit()
+            finally:
+                connection.close()
+
+            message = "Password changed."
+
+    return render_template("account.html", error=error, message=message)
+
+
+@auth.route("/staff", methods=["GET", "POST"])
+def staff():
+    """Only the admin can add members of staff."""
+
+    error = None
+    message = request.args.get("message")
+    form = {"name": "", "email": ""}
+
+    if request.method == "POST":
 
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-
-        error = None
+        form = {"name": name, "email": email}
 
         if not name or not email:
             error = "Name and email are required."
         elif not valid_email(email):
             error = "Enter a valid email address."
-        elif validate_password(password):
-            error = validate_password(password)
+        else:
+            error = password_problem(password)
 
         if error is None:
+
             connection = get_db_connection()
 
             try:
-                taken = connection.execute(
-                    "SELECT 1 FROM users WHERE email = ?", (email,)
-                ).fetchone()
+                create_user(connection, name, email, password, "staff")
+                connection.commit()
+                return redirect(url_for("auth.staff", message="Staff member added."))
 
-                if taken:
-                    error = "An account with this email already exists."
-                else:
-                    connection.execute("""
-                        INSERT INTO users (name, email, password_hash, role)
-                        VALUES (?, ?, ?, 'staff')
-                    """, (name, email, generate_password_hash(password)))
-                    connection.commit()
+            except sqlite3.IntegrityError:
+                connection.rollback()
+                error = "An account with this email already exists."
+
             finally:
                 connection.close()
 
-        if error:
-            return redirect(url_for("staff", error=error))
+    connection = get_db_connection()
 
-        return redirect(url_for("staff", message="Staff member added."))
+    try:
+        members = connection.execute("""
+            SELECT id, name, email, role, created_at
+            FROM users
+            WHERE role IN ('admin', 'staff')
+            ORDER BY role, name
+        """).fetchall()
+    finally:
+        connection.close()
 
-    @app.route("/staff/<int:user_id>/toggle", methods=["POST"])
-    def toggle_staff(user_id):
+    return render_template(
+        "staff.html", members=members, error=error, message=message, form=form
+    )
 
-        if user_id == g.user["id"]:
-            return redirect(url_for(
-                "staff", error="You cannot deactivate your own account."
-            ))
 
-        connection = get_db_connection()
+@auth.route("/staff/<int:user_id>/delete", methods=["POST"])
+def delete_staff(user_id):
 
-        try:
-            connection.execute("""
-                UPDATE users
-                SET is_active = 1 - is_active
-                WHERE id = ? AND role = 'staff'
-            """, (user_id,))
-            connection.commit()
-        finally:
-            connection.close()
+    connection = get_db_connection()
 
-        return redirect(url_for("staff", message="Staff account updated."))
+    try:
+        target = connection.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
 
-    # ---------------- Customer portal ----------------
+        if not target or target["role"] != "staff":
+            return redirect(url_for("auth.staff", message="Only staff accounts can be removed."))
 
-    @app.route("/portal")
-    def portal():
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        connection.commit()
 
-        customer_id = g.user["customer_id"]
+    finally:
+        connection.close()
 
-        connection = get_db_connection()
-
-        try:
-            subscriptions = connection.execute("""
-                SELECT s.*, p.name AS plan_name, p.billing_frequency,
-                       p.allow_pause, p.allow_early_close
-                FROM subscriptions s
-                JOIN subscription_plans p ON p.id = s.plan_id
-                WHERE s.customer_id = ?
-                ORDER BY s.id DESC
-            """, (customer_id,)).fetchall()
-
-            invoices = connection.execute("""
-                SELECT i.*,
-                       COALESCE((
-                           SELECT SUM(amount) FROM payments
-                           WHERE invoice_id = i.id AND status = 'Completed'
-                       ), 0) AS paid_amount
-                FROM invoices i
-                WHERE i.customer_id = ? AND i.status != 'Draft'
-                ORDER BY i.id DESC
-            """, (customer_id,)).fetchall()
-
-            payments = connection.execute("""
-                SELECT pay.*, i.invoice_number
-                FROM payments pay
-                JOIN invoices i ON i.id = pay.invoice_id
-                WHERE i.customer_id = ?
-                ORDER BY pay.id DESC
-                LIMIT 20
-            """, (customer_id,)).fetchall()
-        finally:
-            connection.close()
-
-        today = datetime.now().date().isoformat()
-
-        outstanding = sum(
-            max(i["total_amount"] - i["paid_amount"], 0)
-            for i in invoices if i["status"] == "Confirmed"
-        )
-
-        overdue = sum(
-            max(i["total_amount"] - i["paid_amount"], 0)
-            for i in invoices
-            if i["status"] == "Confirmed" and i["due_date"] < today
-        )
-
-        return render_template(
-            "portal.html",
-            subscriptions=subscriptions,
-            invoices=invoices,
-            payments=payments,
-            outstanding=outstanding,
-            overdue=overdue,
-            today=today,
-            error=request.args.get("error"),
-            message=request.args.get("message"),
-        )
-
-    ensure_admin()
+    return redirect(url_for("auth.staff", message="Staff member removed."))

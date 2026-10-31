@@ -1,0 +1,39 @@
+{% from "_ui.html" import brand_mark %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Sign in{% endblock %} | Brightloop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='brightloop.css') }}">
+</head>
+<body>
+<div class="auth">
+    <section class="auth-brand">
+        <a class="brand" href="{{ url_for('auth.login') }}">
+            {{ brand_mark(42) }}
+            <span><strong>Brightloop</strong><span>Subscription billing</span></span>
+        </a>
+
+        <div>
+            <h2>Every renewal billed once, on time.</h2>
+            <p>Plans, subscriptions, invoices and payments in one place, so nobody types an invoice by hand or chases a payment from a spreadsheet.</p>
+        </div>
+
+        <svg class="auth-loop" viewBox="0 0 200 200" aria-hidden="true">
+            <path d="M100 12A88 88 0 1 0 188 100" fill="none" stroke="#eba43a" stroke-width="14" stroke-linecap="round"/>
+            <circle cx="188" cy="100" r="14" fill="#ffffff"/>
+        </svg>
+    </section>
+
+    <section class="auth-form-side">
+        <div class="auth-card">
+            {% block form %}{% endblock %}
+        </div>
+    </section>
+</div>
+</body>
+</html>

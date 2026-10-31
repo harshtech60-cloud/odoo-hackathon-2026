@@ -1,0 +1,47 @@
+{% extends "auth_base.html" %}
+{% from "_ui.html" import csrf, notice %}
+{% block title %}Create account{% endblock %}
+{% block form %}
+<div>
+    <h1>Create your account</h1>
+    <p class="lead">See your subscriptions and invoices, and manage renewals without sending an email.</p>
+</div>
+
+{{ notice(error=error) }}
+
+<form method="post" class="stack" style="gap:1rem" novalidate>
+    {{ csrf() }}
+    <div class="field">
+        <label for="name">Your name</label>
+        <input type="text" id="name" name="name" value="{{ form.name }}" autocomplete="name" required autofocus>
+    </div>
+    <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ form.email }}" autocomplete="email" required>
+        <span class="hint">Each email can have one account.</span>
+    </div>
+    <div class="field">
+        <label for="company">Company <span class="muted">(optional)</span></label>
+        <input type="text" id="company" name="company" value="{{ form.company or '' }}" autocomplete="organization">
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password" required>
+        <ul class="rules">
+            <li>More than 8 characters</li>
+            <li>An uppercase and a lowercase letter</li>
+            <li>A special character, such as ! or @</li>
+        </ul>
+    </div>
+    <div class="field">
+        <label for="confirm">Confirm password</label>
+        <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+    </div>
+    <button class="btn btn--block" type="submit">Create account</button>
+</form>
+
+<div class="auth-links">
+    <span>Already have an account?</span>
+    <a href="{{ url_for('auth.login') }}">Sign in</a>
+</div>
+{% endblock %}
