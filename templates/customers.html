@@ -1,0 +1,269 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brightloop | Customers</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <h2>BRIGHTLOOP</h2>
+            <p>Subscription Manager</p>
+        </div>
+
+        <nav>
+            <a href="/">Dashboard</a>
+            <a class="active" href="/customers">Customers</a>
+            <a href="#">Products</a>
+            <a href="#">Plans</a>
+            <a href="#">Subscriptions</a>
+            <a href="#">Invoices</a>
+            <a href="#">Payments</a>
+            <a href="#">Discounts</a>
+            <a href="#">Reports</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Odoo × FLUX Hackathon</p>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div>
+                <h1>Customer Management</h1>
+                <p>Manage your business customers</p>
+            </div>
+
+            <a href="/" class="back-link">Back to Dashboard</a>
+
+        </header>
+
+
+        <!-- Success message -->
+
+        {% if message %}
+
+        <div class="success-message">
+            {{ message }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Error message -->
+
+        {% if error %}
+
+        <div class="error-message">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Add Customer Form -->
+
+        <section class="customer-form-section">
+
+            <h2>Add New Customer</h2>
+
+            <p class="section-description">
+                Enter the customer's information below.
+            </p>
+
+            <form method="POST" action="{{ url_for('customers') }}">
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+
+                        <label for="name">Customer Name *</label>
+
+                        <input
+                            type="text"
+                            id="name"
+                            name="name"
+                            placeholder="Enter customer name"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="email">Email Address *</label>
+
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            placeholder="Enter email address"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="company">Company Name</label>
+
+                        <input
+                            type="text"
+                            id="company"
+                            name="company"
+                            placeholder="Enter company name"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="phone">Phone Number</label>
+
+                        <input
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            placeholder="Enter phone number"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <button type="submit" class="primary-button">
+                    + Add Customer
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- Customer Directory -->
+
+        <section class="customer-table-section">
+
+            <div class="table-heading">
+
+                <div>
+                    <h2>Customer Directory</h2>
+                    <p class="section-description">
+                        View and search registered customers.
+                    </p>
+                </div>
+
+            </div>
+
+
+            <!-- Search -->
+
+            <form method="GET"
+                  action="{{ url_for('customers') }}"
+                  class="search-form">
+
+                <input
+                    type="text"
+                    name="q"
+                    placeholder="Search name, email or company..."
+                    value="{{ search }}"
+                >
+
+                <button type="submit" class="primary-button">
+                    Search
+                </button>
+
+                {% if search %}
+                    <a href="{{ url_for('customers') }}"
+                       class="back-link">Clear</a>
+                {% endif %}
+
+            </form>
+
+
+            <!-- Customer Table -->
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Customer Name</th>
+                            <th>Email</th>
+                            <th>Company</th>
+                            <th>Phone</th>
+                            <th>Date Added</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                        {% for customer in customers %}
+
+                        <tr>
+
+                            <td>#{{ customer["id"] }}</td>
+
+                            <td>{{ customer["name"] }}</td>
+
+                            <td>{{ customer["email"] }}</td>
+
+                            <td>{{ customer["company"] or "—" }}</td>
+
+                            <td>{{ customer["phone"] or "—" }}</td>
+
+                            <td>{{ customer["created_at"] }}</td>
+
+                        </tr>
+
+                        {% else %}
+
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                No customers found. Add your first customer!
+                            </td>
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+</body>
+</html>
