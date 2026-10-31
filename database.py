@@ -1,5 +1,5 @@
 import sqlite3
-from pathlib import Path
+from pathlib import 
 
 # Keep the database in the main project folder
 DB_PATH = Path(__file__).resolve().parent / "database.db"
