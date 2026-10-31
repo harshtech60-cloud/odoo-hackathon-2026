@@ -103,7 +103,93 @@ connection.execute("""
 
     )
 """)
+# =====================================
+# SUBSCRIPTIONS TABLE
+# =====================================
 
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS subscriptions (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        subscription_number TEXT UNIQUE,
+
+        customer_id INTEGER NOT NULL,
+
+        plan_id INTEGER NOT NULL,
+
+        start_date TEXT NOT NULL,
+
+        expiry_date TEXT NOT NULL,
+
+        payment_terms_days INTEGER NOT NULL DEFAULT 7,
+
+        status TEXT NOT NULL DEFAULT 'Draft'
+            CHECK(status IN (
+                'Draft',
+                'Quotation',
+                'Confirmed',
+                'Active',
+                'Paused',
+                'Closed'
+            )),
+
+        plan_price REAL NOT NULL DEFAULT 0,
+
+        subtotal REAL NOT NULL DEFAULT 0,
+
+        tax_amount REAL NOT NULL DEFAULT 0,
+
+        total_amount REAL NOT NULL DEFAULT 0,
+
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (customer_id)
+            REFERENCES customers(id),
+
+        FOREIGN KEY (plan_id)
+            REFERENCES subscription_plans(id)
+
+    )
+""")
+
+
+# =====================================
+# SUBSCRIPTION PRODUCT LINES
+# =====================================
+
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS subscription_lines (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        subscription_id INTEGER NOT NULL,
+
+        product_id INTEGER NOT NULL,
+
+        variant_id INTEGER,
+
+        quantity INTEGER NOT NULL
+            CHECK(quantity >= 1),
+
+        unit_price REAL NOT NULL,
+
+        tax_rate REAL NOT NULL DEFAULT 0,
+
+        line_subtotal REAL NOT NULL,
+
+        FOREIGN KEY (subscription_id)
+            REFERENCES subscriptions(id)
+            ON DELETE CASCADE,
+
+        FOREIGN KEY (product_id)
+            REFERENCES products(id),
+
+        FOREIGN KEY (variant_id)
+            REFERENCES product_variants(id)
+
+    )
+""")
         connection.commit()
 
     finally:
