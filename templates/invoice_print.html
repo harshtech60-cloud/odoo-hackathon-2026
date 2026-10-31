@@ -311,6 +311,19 @@
         </div>
 
 
+        {% if invoice["discount_amount"] %}
+        <div class="total-row">
+
+            <span>Discount{% if invoice["discount_code"] %} ({{ invoice["discount_code"] }}){% endif %}</span>
+
+            <strong>
+                −₹{{ "%.2f"|format(invoice["discount_amount"]) }}
+            </strong>
+
+        </div>
+        {% endif %}
+
+
         <div class="total-row">
 
             <span>Total Tax</span>

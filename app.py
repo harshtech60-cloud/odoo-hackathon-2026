@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from database import get_db_connection, init_db
 
 
- app = Flask(__name__)
+app = Flask(__name__)
 
 
 # =====================================
@@ -1128,6 +1128,119 @@ def invoices():
 
 
 # =====================================
+# AUTOMATIC DISCOUNTS ON INVOICES
+# =====================================
+
+def calculate_discount_amount(discount, items):
+    """Return the saving this discount gives on the invoice items.
+
+    A discount with a product only looks at that product's lines. A
+    discount without a product looks at the whole subscription. Returns
+    0 when the minimum order value or minimum quantity is not reached.
+    """
+
+    if discount["product_id"] is None:
+        eligible = items
+    else:
+        eligible = [
+            item for item in items
+            if item.get("product_id") == discount["product_id"]
+        ]
+
+    base = round(sum(item["line_subtotal"] for item in eligible), 2)
+
+    quantity = sum(
+        item["quantity"] for item in eligible
+        if item.get("product_id") is not None
+    )
+
+    if base <= 0:
+        return 0.0
+
+    if base < float(discount["min_order_value"] or 0):
+        return 0.0
+
+    if quantity < int(discount["min_quantity"] or 0):
+        return 0.0
+
+    if discount["discount_type"] == "Percentage":
+        amount = base * float(discount["discount_value"]) / 100
+    else:
+        amount = float(discount["discount_value"])
+
+    if discount["max_discount_amount"] is not None:
+        amount = min(amount, float(discount["max_discount_amount"]))
+
+    return round(min(amount, base), 2)
+
+
+def find_best_discount(connection, items, invoice_date):
+    """Pick the active discount that saves the most on this invoice."""
+
+    candidates = connection.execute("""
+        SELECT *
+        FROM discounts
+        WHERE status = 'Active'
+          AND start_date <= ?
+          AND end_date >= ?
+          AND (usage_limit IS NULL OR used_count < usage_limit)
+    """, (invoice_date, invoice_date)).fetchall()
+
+    best = None
+    best_amount = 0.0
+
+    for discount in candidates:
+
+        amount = calculate_discount_amount(discount, items)
+
+        if amount > best_amount:
+            best, best_amount = discount, amount
+
+    return best, best_amount
+
+
+def apply_discount_to_items(items, discount, amount):
+    """Spread a discount over the eligible lines and recalculate tax.
+
+    Each line keeps its original subtotal and gains a discount_amount.
+    Tax is charged on the discounted value.
+    """
+
+    if discount is not None and discount["product_id"] is not None:
+        eligible = [
+            item for item in items
+            if item.get("product_id") == discount["product_id"]
+        ]
+    else:
+        eligible = list(items) if discount is not None else []
+
+    base = sum(item["line_subtotal"] for item in eligible)
+
+    for item in items:
+        item["discount_amount"] = 0.0
+
+    remaining = amount
+
+    for index, item in enumerate(eligible):
+
+        if index == len(eligible) - 1:
+            share = round(remaining, 2)
+        else:
+            share = round(amount * item["line_subtotal"] / base, 2)
+            remaining -= share
+
+        item["discount_amount"] = share
+
+    for item in items:
+
+        taxable = item["line_subtotal"] - item["discount_amount"]
+
+        item["tax_amount"] = round(
+            taxable * item["tax_rate"] / 100, 2
+        )
+
+
+# =====================================
 # GENERATE ALL DUE INVOICES
 # =====================================
 
@@ -1248,7 +1361,8 @@ def generate_due_invoices():
                     "unit_price": plan_price,
                     "tax_rate": plan_tax_rate,
                     "line_subtotal": plan_price,
-                    "tax_amount": plan_tax
+                    "tax_amount": plan_tax,
+                    "product_id": None
                 })
 
                 for line in lines:
@@ -1280,8 +1394,22 @@ def generate_due_invoices():
                         "unit_price": unit_price,
                         "tax_rate": tax_rate,
                         "line_subtotal": line_subtotal,
-                        "tax_amount": line_tax
+                        "tax_amount": line_tax,
+                        "product_id": line["product_id"]
                     })
+
+                invoice_date = period_start
+
+                # Apply the best eligible discount automatically
+                discount, discount_amount = find_best_discount(
+                    connection,
+                    invoice_items,
+                    invoice_date.isoformat()
+                )
+
+                apply_discount_to_items(
+                    invoice_items, discount, discount_amount
+                )
 
                 subtotal = round(
                     sum(item["line_subtotal"] for item in invoice_items),
@@ -1294,10 +1422,8 @@ def generate_due_invoices():
                 )
 
                 total_amount = round(
-                    subtotal + tax_amount, 2
+                    subtotal - discount_amount + tax_amount, 2
                 )
-
-                invoice_date = period_start
 
                 due_date = (
                     invoice_date
@@ -1309,6 +1435,35 @@ def generate_due_invoices():
 
                 try:
 
+                    # Reserve one use of the discount. If its limit was
+                    # reached in the meantime, bill without it.
+                    if discount is not None:
+
+                        claimed = connection.execute("""
+                            UPDATE discounts
+                            SET used_count = used_count + 1
+                            WHERE id = ?
+                              AND (usage_limit IS NULL
+                                   OR used_count < usage_limit)
+                        """, (discount["id"],)).rowcount
+
+                        if not claimed:
+
+                            discount, discount_amount = None, 0.0
+
+                            apply_discount_to_items(
+                                invoice_items, None, 0.0
+                            )
+
+                            tax_amount = round(sum(
+                                item["tax_amount"]
+                                for item in invoice_items
+                            ), 2)
+
+                            total_amount = round(
+                                subtotal + tax_amount, 2
+                            )
+
                     cursor = connection.execute("""
                         INSERT INTO invoices (
                             invoice_number,
@@ -1319,12 +1474,14 @@ def generate_due_invoices():
                             invoice_date,
                             due_date,
                             subtotal,
+                            discount_amount,
+                            discount_code,
                             tax_amount,
                             total_amount,
                             status
                         )
                         VALUES (
-                            NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft'
+                            NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft'
                         )
                     """, (
                         subscription["id"],
@@ -1334,6 +1491,8 @@ def generate_due_invoices():
                         invoice_date.isoformat(),
                         due_date.isoformat(),
                         subtotal,
+                        discount_amount,
+                        discount["code"] if discount else None,
                         tax_amount,
                         total_amount
                     ))
@@ -1358,10 +1517,11 @@ def generate_due_invoices():
                                 unit_price,
                                 tax_rate,
                                 line_subtotal,
+                                discount_amount,
                                 tax_amount,
                                 line_total
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             invoice_id,
                             item["description"],
@@ -1369,9 +1529,11 @@ def generate_due_invoices():
                             item["unit_price"],
                             item["tax_rate"],
                             item["line_subtotal"],
+                            item["discount_amount"],
                             item["tax_amount"],
                             round(
                                 item["line_subtotal"]
+                                - item["discount_amount"]
                                 + item["tax_amount"], 2
                             )
                         ))
@@ -1840,10 +2002,18 @@ def discounts():
         WHERE end_date < ?
     """, (today,)).fetchone()[0]
 
+    product_list = conn.execute("""
+        SELECT id, name FROM products ORDER BY name
+    """).fetchall()
+
+    product_names = {row["id"]: row["name"] for row in product_list}
+
     conn.close()
 
     return render_template(
         "discounts.html",
+        products=product_list,
+        product_names=product_names,
         discounts=discount_list,
         total_discounts=total_discounts,
         active_discounts=active_discounts,
@@ -1881,6 +2051,12 @@ def add_discount():
         usage_input = request.form.get("usage_limit", "").strip()
 
         usage_limit = int(usage_input) if usage_input else None
+
+        min_quantity = int(request.form.get("min_quantity") or 0)
+
+        product_input = request.form.get("product_id", "").strip()
+
+        product_id = int(product_input) if product_input else None
 
     except (TypeError, ValueError):
         return redirect(url_for(
@@ -1935,6 +2111,12 @@ def add_discount():
             error="Usage limit must be greater than zero."
         ))
 
+    if min_quantity < 0:
+        return redirect(url_for(
+            "discounts",
+            error="Minimum quantity cannot be negative."
+        ))
+
     # Validate dates
     try:
         start = date.fromisoformat(start_date)
@@ -1963,9 +2145,11 @@ def add_discount():
                 start_date,
                 end_date,
                 usage_limit,
+                min_quantity,
+                product_id,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
         """, (
             code,
             description,
@@ -1975,7 +2159,9 @@ def add_discount():
             max_discount_amount,
             start_date,
             end_date,
-            usage_limit
+            usage_limit,
+            min_quantity,
+            product_id
         ))
 
         conn.commit()

@@ -5,7 +5,7 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent / "database.db"
 
 
- def get_db_connection():
+def get_db_connection():
     """Create a connection to the SQLite database."""
 
     connection = sqlite3.connect(DB_PATH)
@@ -15,6 +15,23 @@ DB_PATH = Path(__file__).resolve().parent / "database.db"
     connection.execute("PRAGMA foreign_keys = ON")
 
     return connection
+
+
+def ensure_column(connection, table, column, definition):
+    """Add a column to an existing table when it is missing.
+
+    Lets older database files pick up new columns without being deleted.
+    """
+
+    existing = [
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table})")
+    ]
+
+    if column not in existing:
+        connection.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        )
 
 
 def init_db():
@@ -365,6 +382,83 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_discounts_status
             ON discounts(status)
         """)
+
+        # =====================================
+        # USERS AND ROLES
+        # =====================================
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'customer'
+                    CHECK(role IN ('admin', 'staff', 'customer')),
+                customer_id INTEGER,
+                reset_token_hash TEXT,
+                reset_expires TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (customer_id)
+                    REFERENCES customers(id)
+            )
+        """)
+
+        # =====================================
+        # QUOTATION TEMPLATES
+        # =====================================
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS quotation_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                plan_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                variant_id INTEGER,
+                quantity INTEGER NOT NULL DEFAULT 1
+                    CHECK(quantity >= 1),
+                payment_terms_days INTEGER NOT NULL DEFAULT 7,
+                tax_rate REAL NOT NULL DEFAULT 18,
+                valid_days INTEGER NOT NULL DEFAULT 30
+                    CHECK(valid_days >= 1),
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (plan_id)
+                    REFERENCES subscription_plans(id),
+                FOREIGN KEY (product_id)
+                    REFERENCES products(id)
+            )
+        """)
+
+        # =====================================
+        # COLUMNS ADDED AFTER THE FIRST RELEASE
+        # =====================================
+        # Discounts can target one product and a minimum quantity.
+        ensure_column(connection, "discounts", "product_id", "INTEGER")
+        ensure_column(connection, "discounts", "min_quantity", "INTEGER DEFAULT 0")
+
+        # Invoices record the discount that was applied.
+        ensure_column(connection, "invoices", "discount_amount", "REAL NOT NULL DEFAULT 0")
+        ensure_column(connection, "invoices", "discount_code", "TEXT")
+        ensure_column(connection, "invoice_lines", "discount_amount", "REAL NOT NULL DEFAULT 0")
+
+        # Quotations stay valid for a set number of days.
+        ensure_column(connection, "subscriptions", "quotation_valid_until", "TEXT")
+
+        # =====================================
+        # INDEXES FOR FAST LISTS AND REPORTS
+        # =====================================
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS idx_subscriptions_customer ON subscriptions(customer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status)",
+            "CREATE INDEX IF NOT EXISTS idx_sub_lines_subscription ON subscription_lines(subscription_id)",
+            "CREATE INDEX IF NOT EXISTS idx_invoices_subscription_period ON invoices(subscription_id, billing_period_start)",
+            "CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_invoices_status_due ON invoices(status, due_date)",
+            "CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines(invoice_id)",
+            "CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id)",
+            "CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(payment_date)",
+            "CREATE INDEX IF NOT EXISTS idx_users_customer ON users(customer_id)",
+        ):
+            connection.execute(statement)
+
         connection.commit()
 
     finally:
