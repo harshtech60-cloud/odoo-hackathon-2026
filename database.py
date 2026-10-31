@@ -22,16 +22,49 @@ def init_db():
     connection = get_db_connection()
 
     try:
-        connection.execute("""
-            CREATE TABLE IF NOT EXISTS customers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
-                company TEXT DEFAULT '',
-                phone TEXT DEFAULT '',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Create products table
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS products (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        product_type TEXT NOT NULL,
+
+        sales_price REAL NOT NULL CHECK(sales_price >= 0),
+
+        cost_price REAL NOT NULL CHECK(cost_price >= 0),
+
+        notes TEXT DEFAULT '',
+
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+
+    )
+""")
+
+
+# Create product variants table
+connection.execute("""
+    CREATE TABLE IF NOT EXISTS product_variants (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        product_id INTEGER NOT NULL,
+
+        variant_name TEXT NOT NULL COLLATE NOCASE,
+
+        extra_price REAL NOT NULL DEFAULT 0
+            CHECK(extra_price >= 0),
+
+        FOREIGN KEY (product_id)
+            REFERENCES products(id)
+            ON DELETE CASCADE,
+
+        UNIQUE(product_id, variant_name)
+
+    )
+""")
 
         connection.commit()
 
