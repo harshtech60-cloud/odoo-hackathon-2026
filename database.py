@@ -289,6 +289,39 @@ connection.execute("""
     CREATE INDEX IF NOT EXISTS idx_invoices_due_date
     ON invoices(due_date)
 """)
+# Payments Table
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payment_number TEXT UNIQUE NOT NULL,
+                invoice_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                payment_date TEXT NOT NULL,
+                amount REAL NOT NULL CHECK(amount > 0),
+                payment_method TEXT NOT NULL,
+                transaction_reference TEXT,
+                notes TEXT,
+                status TEXT DEFAULT 'Completed'
+                    CHECK(status IN ('Completed', 'Pending', 'Failed', 'Refunded')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (invoice_id)
+                    REFERENCES invoices(id),
+
+                FOREIGN KEY (customer_id)
+                    REFERENCES customers(id)
+            )
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_payments_invoice
+            ON payments(invoice_id)
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_payments_customer
+            ON payments(customer_id)
+        """)
         connection.commit()
 
     finally:
