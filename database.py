@@ -322,6 +322,37 @@ connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_payments_customer
             ON payments(customer_id)
         """)
+# Discounts Table
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS discounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                description TEXT,
+                discount_type TEXT NOT NULL
+                    CHECK(discount_type IN ('Percentage', 'Fixed Amount')),
+                discount_value REAL NOT NULL
+                    CHECK(discount_value > 0),
+                min_order_value REAL DEFAULT 0,
+                max_discount_amount REAL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                usage_limit INTEGER,
+                used_count INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'Active'
+                    CHECK(status IN ('Active', 'Inactive')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discounts_code
+            ON discounts(code)
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discounts_status
+            ON discounts(status)
+        """)
         connection.commit()
 
     finally:
