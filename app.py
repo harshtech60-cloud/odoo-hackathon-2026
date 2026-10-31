@@ -1085,7 +1085,7 @@ def invoices():
             SELECT COALESCE(SUM(total_amount), 0) AS total
             FROM invoices
             WHERE status = 'Confirmed'
-              AND due_date >= ''
+              total_outstanding = connection.execute("""     SELECT COALESCE(SUM(total_amount), 0) AS total     FROM invoices     WHERE status = 'Confirmed' """).fetchone()["total"]
         """).fetchone()["total"]
 
         overdue_total = connection.execute("""
