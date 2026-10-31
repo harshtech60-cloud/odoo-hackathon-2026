@@ -5,7 +5,7 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent / "database.db"
 
 
-def get_db_connection():
+ get_db_connection():
     """Create a connection to the SQLite database."""
 
     connection = sqlite3.connect(DB_PATH)
