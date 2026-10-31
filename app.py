@@ -1,3 +1,6 @@
+import math
+import sqlite3
+from datetime import date
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from decimal import Decimal, InvalidOperation
@@ -493,6 +496,433 @@ def plans():
         plans=plan_list,
         message=message,
         error=error
+    )
+    # =============================================
+# SUBSCRIPTION MANAGEMENT
+# =============================================
+
+@app.route("/subscriptions", methods=["GET", "POST"])
+def subscriptions():
+
+    message = None
+    error = request.args.get("error")
+
+    if request.args.get("created") == "1":
+        message = "Subscription created successfully!"
+
+    if request.args.get("updated") == "1":
+        message = "Subscription status updated successfully!"
+
+    if request.args.get("renewed"):
+        message = request.args.get("renewed")
+
+    # -----------------------------------------
+    # CREATE NEW SUBSCRIPTION
+    # -----------------------------------------
+
+    if request.method == "POST":
+
+        try:
+
+            customer_id = int(request.form.get("customer_id", ""))
+            plan_id = int(request.form.get("plan_id", ""))
+            product_id = int(request.form.get("product_id", ""))
+            quantity = int(request.form.get("quantity", "1"))
+            payment_terms_days = int(
+                request.form.get("payment_terms_days", "7")
+            )
+            variant_text = request.form.get("variant_id", "").strip()
+            variant_id = int(variant_text) if variant_text else None
+
+            tax_rate = float(request.form.get("tax_rate", "18"))
+
+            start_date_text = request.form.get("start_date", "")
+            expiry_date_text = request.form.get("expiry_date", "")
+
+            start_date = date.fromisoformat(start_date_text)
+            expiry_date = date.fromisoformat(expiry_date_text)
+
+            if quantity < 1:
+                raise ValueError("Quantity must be at least 1.")
+
+            if not 0 <= payment_terms_days <= 365:
+                raise ValueError("Payment terms must be between 0 and 365 days.")
+
+            if not math.isfinite(tax_rate) or not 0 <= tax_rate <= 100:
+                raise ValueError("Tax rate must be between 0 and 100.")
+
+            if expiry_date < start_date:
+                raise ValueError("Expiry date cannot be before start date.")
+
+        except (ValueError, TypeError, OverflowError):
+
+            error = (
+                "Please enter valid customer, plan, product, "
+                "quantity, dates and payment details."
+            )
+
+        if error is None:
+
+            connection = get_db_connection()
+
+            try:
+
+                customer = connection.execute(
+                    "SELECT * FROM customers WHERE id = ?",
+                    (customer_id,)
+                ).fetchone()
+
+                plan = connection.execute(
+                    "SELECT * FROM subscription_plans WHERE id = ?",
+                    (plan_id,)
+                ).fetchone()
+
+                product = connection.execute(
+                    "SELECT * FROM products WHERE id = ?",
+                    (product_id,)
+                ).fetchone()
+
+                if not customer:
+                    error = "Selected customer does not exist."
+
+                elif not plan:
+                    error = "Selected subscription plan does not exist."
+
+                elif not product:
+                    error = "Selected product does not exist."
+
+                elif quantity < plan["minimum_quantity"]:
+                    error = (
+                        f"This plan requires a minimum quantity "
+                        f"of {plan['minimum_quantity']}."
+                    )
+
+                elif plan["available_from"] and (
+                    start_date_text < plan["available_from"]
+                ):
+                    error = "Subscription starts before plan availability."
+
+                elif plan["available_until"] and (
+                    start_date_text > plan["available_until"]
+                ):
+                    error = "The selected plan is no longer available."
+
+                variant_extra_price = 0.0
+                variant = None
+
+                if error is None and variant_id is not None:
+
+                    variant = connection.execute("""
+                        SELECT *
+                        FROM product_variants
+                        WHERE id = ?
+                        AND product_id = ?
+                    """, (variant_id, product_id)).fetchone()
+
+                    if not variant:
+                        error = "Selected variant does not belong to this product."
+
+                    else:
+                        variant_extra_price = float(variant["extra_price"])
+
+                if error is None:
+
+                    # Calculate product line price
+                    unit_price = (
+                        float(product["sales_price"])
+                        + variant_extra_price
+                    )
+
+                    product_subtotal = round(
+                        unit_price * quantity, 2
+                    )
+
+                    # Add recurring plan fee
+                    plan_price = float(plan["price"])
+
+                    subtotal = round(
+                        plan_price + product_subtotal, 2
+                    )
+
+                    tax_amount = round(
+                        subtotal * tax_rate / 100, 2
+                    )
+
+                    total_amount = round(
+                        subtotal + tax_amount, 2
+                    )
+
+                    # Start database transaction
+                    connection.execute("BEGIN")
+
+                    cursor = connection.execute("""
+                        INSERT INTO subscriptions (
+                            subscription_number,
+                            customer_id,
+                            plan_id,
+                            start_date,
+                            expiry_date,
+                            payment_terms_days,
+                            status,
+                            plan_price,
+                            subtotal,
+                            tax_amount,
+                            total_amount
+                        )
+                        VALUES (
+                            NULL, ?, ?, ?, ?, ?,
+                            'Draft', ?, ?, ?, ?
+                        )
+                    """, (
+                        customer_id,
+                        plan_id,
+                        start_date_text,
+                        expiry_date_text,
+                        payment_terms_days,
+                        plan_price,
+                        subtotal,
+                        tax_amount,
+                        total_amount
+                    ))
+
+                    subscription_id = cursor.lastrowid
+
+                    subscription_number = (
+                        f"SUB-{subscription_id:05d}"
+                    )
+
+                    connection.execute("""
+                        UPDATE subscriptions
+                        SET subscription_number = ?
+                        WHERE id = ?
+                    """, (subscription_number, subscription_id))
+
+                    # Save product line
+                    connection.execute("""
+                        INSERT INTO subscription_lines (
+                            subscription_id,
+                            product_id,
+                            variant_id,
+                            quantity,
+                            unit_price,
+                            tax_rate,
+                            line_subtotal
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        subscription_id,
+                        product_id,
+                        variant_id,
+                        quantity,
+                        unit_price,
+                        tax_rate,
+                        product_subtotal
+                    ))
+
+                    connection.commit()
+
+            except sqlite3.IntegrityError:
+
+                connection.rollback()
+                error = "Unable to create subscription. Please check the selected records."
+
+            except Exception:
+
+                connection.rollback()
+                raise
+
+            finally:
+                connection.close()
+
+            if error is None:
+                return redirect(
+                    url_for("subscriptions", created="1")
+                )
+
+    # -----------------------------------------
+    # RETRIEVE DATA FOR PAGE
+    # -----------------------------------------
+
+    connection = get_db_connection()
+
+    try:
+
+        customer_list = connection.execute("""
+            SELECT id, name, email
+            FROM customers
+            ORDER BY name
+        """).fetchall()
+
+        plan_list = connection.execute("""
+            SELECT *
+            FROM subscription_plans
+            ORDER BY name
+        """).fetchall()
+
+        product_list = connection.execute("""
+            SELECT *
+            FROM products
+            ORDER BY name
+        """).fetchall()
+
+        variant_list = connection.execute("""
+            SELECT v.*, p.name AS product_name
+            FROM product_variants v
+            JOIN products p ON p.id = v.product_id
+            ORDER BY p.name, v.variant_name
+        """).fetchall()
+
+        subscription_rows = connection.execute("""
+            SELECT
+                s.*,
+                c.name AS customer_name,
+                p.name AS plan_name,
+                p.billing_frequency,
+                p.allow_pause,
+                p.allow_early_close,
+                p.allow_renewal
+
+            FROM subscriptions s
+
+            JOIN customers c ON c.id = s.customer_id
+
+            JOIN subscription_plans p ON p.id = s.plan_id
+
+            ORDER BY s.id DESC
+        """).fetchall()
+
+        subscription_list = []
+
+        for row in subscription_rows:
+
+            subscription = dict(row)
+
+            lines = connection.execute("""
+                SELECT
+                    sl.*,
+                    p.name AS product_name,
+                    v.variant_name
+
+                FROM subscription_lines sl
+
+                JOIN products p ON p.id = sl.product_id
+
+                LEFT JOIN product_variants v
+                ON v.id = sl.variant_id
+
+                WHERE sl.subscription_id = ?
+
+            """, (row["id"],)).fetchall()
+
+            subscription["lines"] = [
+                dict(line) for line in lines
+            ]
+
+            subscription_list.append(subscription)
+
+    finally:
+        connection.close()
+
+    return render_template(
+        "subscriptions.html",
+        customers=customer_list,
+        plans=plan_list,
+        products=product_list,
+        variants=variant_list,
+        subscriptions=subscription_list,
+        message=message,
+        error=error,
+        today=date.today().isoformat()
+    )
+
+
+# =============================================
+# SUBSCRIPTION STATUS MANAGEMENT
+# =============================================
+
+@app.route(
+    "/subscriptions/<int:subscription_id>/status",
+    methods=["POST"]
+)
+def update_subscription_status(subscription_id):
+
+    action = request.form.get("action", "")
+
+    connection = get_db_connection()
+
+    try:
+
+        subscription = connection.execute("""
+            SELECT
+                s.*,
+                p.allow_pause,
+                p.allow_early_close
+
+            FROM subscriptions s
+
+            JOIN subscription_plans p
+            ON p.id = s.plan_id
+
+            WHERE s.id = ?
+
+        """, (subscription_id,)).fetchone()
+
+        if not subscription:
+            return redirect(
+                url_for("subscriptions", error="Subscription not found.")
+            )
+
+        current_status = subscription["status"]
+        new_status = None
+
+        if action == "send_quotation" and current_status == "Draft":
+            new_status = "Quotation"
+
+        elif action == "confirm" and current_status == "Quotation":
+            new_status = "Confirmed"
+
+        elif action == "activate" and current_status == "Confirmed":
+            new_status = "Active"
+
+        elif action == "pause" and current_status == "Active":
+
+            if subscription["allow_pause"]:
+                new_status = "Paused"
+
+        elif action == "resume" and current_status == "Paused":
+            new_status = "Active"
+
+        elif action == "close" and current_status in ("Active", "Paused"):
+
+            expired = (
+                subscription["expiry_date"] <= date.today().isoformat()
+            )
+
+            if subscription["allow_early_close"] or expired:
+                new_status = "Closed"
+
+        if new_status is None:
+
+            return redirect(
+                url_for(
+                    "subscriptions",
+                    error="This status change is not permitted."
+                )
+            )
+
+        connection.execute("""
+            UPDATE subscriptions
+            SET status = ?
+            WHERE id = ?
+        """, (new_status, subscription_id))
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+    return redirect(
+        url_for("subscriptions", updated="1")
     )
 if __name__ == "__main__":
 
