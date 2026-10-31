@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from database import get_db_connection, init_db
 
 
- app = Flask(__name__)
+app = Flask(__name__)
 
 
 # =====================================
