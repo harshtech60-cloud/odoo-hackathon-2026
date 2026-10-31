@@ -1,0 +1,433 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brightloop | Subscription Plans</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <h2>BRIGHTLOOP</h2>
+            <p>Subscription Manager</p>
+        </div>
+
+        <nav>
+
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+
+            <a href="{{ url_for('customers') }}">Customers</a>
+
+            <a href="{{ url_for('products') }}">Products</a>
+
+            <a class="active" href="{{ url_for('plans') }}">Plans</a>
+
+            <a href="#">Subscriptions</a>
+
+            <a href="#">Invoices</a>
+
+            <a href="#">Payments</a>
+
+            <a href="#">Discounts</a>
+
+            <a href="#">Reports</a>
+
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Odoo × FLUX Hackathon</p>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div>
+                <h1>Subscription Plans</h1>
+                <p>Create and manage your recurring billing plans.</p>
+            </div>
+
+            <a href="{{ url_for('dashboard') }}" class="back-link">
+                ← Dashboard
+            </a>
+
+        </header>
+
+
+        <!-- Success Message -->
+
+        {% if message %}
+
+        <div class="success-message">
+            {{ message }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Error Message -->
+
+        {% if error %}
+
+        <div class="error-message">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Create Plan Form -->
+
+        <section class="plan-form-section">
+
+            <div class="section-heading">
+
+                <h2>Create New Plan</h2>
+
+                <p>
+                    Define your subscription pricing and billing rules.
+                </p>
+
+            </div>
+
+
+            <form method="POST" action="{{ url_for('plans') }}">
+
+                <div class="form-grid">
+
+
+                    <div class="form-group">
+
+                        <label for="name">Plan Name *</label>
+
+                        <input
+                            type="text"
+                            id="name"
+                            name="name"
+                            placeholder="e.g. Premium Monthly"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="price">
+                            Plan Price (₹ per billing cycle) *
+                        </label>
+
+                        <input
+                            type="number"
+                            id="price"
+                            name="price"
+                            min="0"
+                            step="0.01"
+                            placeholder="e.g. 499"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="billing_frequency">
+                            Billing Frequency *
+                        </label>
+
+                        <select
+                            id="billing_frequency"
+                            name="billing_frequency"
+                            required
+                        >
+
+                            <option value="">Select frequency</option>
+
+                            <option value="daily">Daily</option>
+
+                            <option value="weekly">Weekly</option>
+
+                            <option value="monthly">Monthly</option>
+
+                            <option value="yearly">Yearly</option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="minimum_quantity">
+                            Minimum Quantity *
+                        </label>
+
+                        <input
+                            type="number"
+                            id="minimum_quantity"
+                            name="minimum_quantity"
+                            min="1"
+                            value="1"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="available_from">
+                            Available From *
+                        </label>
+
+                        <input
+                            type="date"
+                            id="available_from"
+                            name="available_from"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="available_until">
+                            Available Until
+                        </label>
+
+                        <input
+                            type="date"
+                            id="available_until"
+                            name="available_until"
+                        >
+
+                    </div>
+
+
+                </div>
+
+
+                <!-- Plan Permissions -->
+
+                <div class="plan-settings">
+
+                    <h3>Plan Settings & Permissions</h3>
+
+                    <p>
+                        Choose what customers and staff can do with this plan.
+                    </p>
+
+
+                    <label class="setting-option">
+
+                        <input
+                            type="checkbox"
+                            name="auto_close"
+                        >
+
+                        Automatically close plan when availability ends
+
+                    </label>
+
+
+                    <label class="setting-option">
+
+                        <input
+                            type="checkbox"
+                            name="allow_early_close"
+                            checked
+                        >
+
+                        Allow subscriptions to close early
+
+                    </label>
+
+
+                    <label class="setting-option">
+
+                        <input
+                            type="checkbox"
+                            name="allow_pause"
+                            checked
+                        >
+
+                        Allow subscriptions to be paused
+
+                    </label>
+
+
+                    <label class="setting-option">
+
+                        <input
+                            type="checkbox"
+                            name="allow_renewal"
+                            checked
+                        >
+
+                        Allow subscriptions to be renewed
+
+                    </label>
+
+                </div>
+
+
+                <button type="submit" class="primary-button">
+
+                    + Create Subscription Plan
+
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- Plan Directory -->
+
+        <section class="plan-table-section">
+
+            <div class="section-heading">
+
+                <h2>Available Subscription Plans</h2>
+
+                <p>
+                    View all plans created by the administrator.
+                </p>
+
+            </div>
+
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Plan ID</th>
+
+                            <th>Plan Name</th>
+
+                            <th>Price</th>
+
+                            <th>Billing Cycle</th>
+
+                            <th>Minimum Quantity</th>
+
+                            <th>Availability</th>
+
+                            <th>Settings</th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for plan in plans %}
+
+                        <tr>
+
+                            <td>#{{ plan["id"] }}</td>
+
+                            <td>{{ plan["name"] }}</td>
+
+                            <td>
+                                ₹{{ "%.2f"|format(plan["price"]) }}
+                            </td>
+
+                            <td>
+                                {{ plan["billing_frequency"].title() }}
+                            </td>
+
+                            <td>
+                                {{ plan["minimum_quantity"] }}
+                            </td>
+
+                            <td>
+
+                                {{ plan["available_from"] }}
+
+                                {% if plan["available_until"] %}
+                                    to {{ plan["available_until"] }}
+                                {% else %}
+                                    onwards
+                                {% endif %}
+
+                            </td>
+
+                            <td class="settings-cell">
+
+                                {% if plan["auto_close"] %}
+                                    Auto-close
+                                {% endif %}
+
+                                {% if plan["allow_early_close"] %}
+                                    Early-close
+                                {% endif %}
+
+                                {% if plan["allow_pause"] %}
+                                    Pause
+                                {% endif %}
+
+                                {% if plan["allow_renewal"] %}
+                                    Renewal
+                                {% endif %}
+
+                            </td>
+
+                        </tr>
+
+                        {% else %}
+
+                        <tr>
+
+                            <td colspan="7" class="empty-state">
+
+                                No subscription plans created yet.
+
+                            </td>
+
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+
+    </main>
+
+</div>
+
+</body>
+</html>
