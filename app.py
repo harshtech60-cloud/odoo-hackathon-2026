@@ -5,7 +5,7 @@ import re
 import sqlite3
 import uuid
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperatio
 
 from flask import Flask, render_template, request, redirect, url_for
 
