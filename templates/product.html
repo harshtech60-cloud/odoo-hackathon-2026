@@ -1,0 +1,388 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brightloop | Products</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <h2>BRIGHTLOOP</h2>
+            <p>Subscription Manager</p>
+        </div>
+
+        <nav>
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('customers') }}">Customers</a>
+            <a class="active" href="{{ url_for('products') }}">Products</a>
+            <a href="#">Plans</a>
+            <a href="#">Subscriptions</a>
+            <a href="#">Invoices</a>
+            <a href="#">Payments</a>
+            <a href="#">Discounts</a>
+            <a href="#">Reports</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Odoo × FLUX Hackathon</p>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div>
+                <h1>Product Management</h1>
+                <p>Create and manage your business products.</p>
+            </div>
+
+            <a href="{{ url_for('dashboard') }}" class="back-link">
+                ← Dashboard
+            </a>
+
+        </header>
+
+
+        <!-- Success Message -->
+
+        {% if message %}
+        <div class="success-message">
+            {{ message }}
+        </div>
+        {% endif %}
+
+
+        <!-- Error Message -->
+
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
+        {% endif %}
+
+
+        <!-- Add Product -->
+
+        <section class="product-form-section">
+
+            <div class="section-heading">
+                <h2>Add New Product</h2>
+                <p>Enter product information and pricing details.</p>
+            </div>
+
+            <form method="POST" action="{{ url_for('products') }}">
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+
+                        <label for="name">Product Name *</label>
+
+                        <input
+                            type="text"
+                            id="name"
+                            name="name"
+                            placeholder="e.g. Cloud Storage Software"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="product_type">Product Type *</label>
+
+                        <select
+                            id="product_type"
+                            name="product_type"
+                            required
+                        >
+                            <option value="">Select product type</option>
+                            <option value="Software">Software</option>
+                            <option value="Add-on">Add-on</option>
+                            <option value="Other">Other</option>
+                        </select>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="sales_price">Sales Price (₹) *</label>
+
+                        <input
+                            type="number"
+                            id="sales_price"
+                            name="sales_price"
+                            min="0"
+                            step="0.01"
+                            placeholder="Enter sales price"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="cost_price">Cost Price (₹) *</label>
+
+                        <input
+                            type="number"
+                            id="cost_price"
+                            name="cost_price"
+                            min="0"
+                            step="0.01"
+                            placeholder="Enter cost price"
+                            required
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="form-group notes-group">
+
+                    <label for="notes">Product Notes</label>
+
+                    <textarea
+                        id="notes"
+                        name="notes"
+                        rows="3"
+                        placeholder="Enter product description or notes..."
+                    ></textarea>
+
+                </div>
+
+
+                <button type="submit" class="primary-button">
+                    + Add Product
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- Add Product Variant -->
+
+        <section class="product-form-section">
+
+            <div class="section-heading">
+                <h2>Add Product Variant</h2>
+                <p>
+                    Create additional options with their own extra prices.
+                </p>
+            </div>
+
+            <form method="POST"
+                  action="{{ url_for('add_product_variant', product_id=0) }}"
+                  id="variant-form">
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+
+                        <label for="variant_product">Select Product *</label>
+
+                        <select id="variant_product" required>
+
+                            <option value="">Choose a product</option>
+
+                            {% for product in products %}
+
+                            <option value="{{ product['id'] }}">
+                                {{ product['name'] }}
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="variant_name">Variant Name *</label>
+
+                        <input
+                            type="text"
+                            id="variant_name"
+                            name="variant_name"
+                            placeholder="e.g. Odoo Brand"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="extra_price">Additional Price (₹) *</label>
+
+                        <input
+                            type="number"
+                            id="extra_price"
+                            name="extra_price"
+                            min="0"
+                            step="0.01"
+                            placeholder="e.g. 560"
+                            required
+                        >
+
+                    </div>
+
+                </div>
+
+                <button type="submit" class="primary-button">
+                    + Add Variant
+                </button>
+
+            </form>
+
+            <script>
+                const variantProduct =
+                    document.getElementById("variant_product");
+
+                const variantForm =
+                    document.getElementById("variant-form");
+
+                variantForm.addEventListener("submit", function(event) {
+
+                    event.preventDefault();
+
+                    const productId = variantProduct.value;
+
+                    if (!productId) {
+                        alert("Please select a product first.");
+                        return;
+                    }
+
+                    variantForm.action =
+                        "/products/" + encodeURIComponent(productId) + "/variants";
+
+                    variantForm.submit();
+
+                });
+            </script>
+
+        </section>
+
+
+        <!-- Product Directory -->
+
+        <section class="product-table-section">
+
+            <div class="section-heading">
+                <h2>Product Directory</h2>
+                <p>All products and their available variants.</p>
+            </div>
+
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th>Product ID</th>
+                            <th>Product Name</th>
+                            <th>Type</th>
+                            <th>Sales Price</th>
+                            <th>Cost Price</th>
+                            <th>Variants</th>
+                        </tr>
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for product in products %}
+
+                        <tr>
+
+                            <td>#{{ product["id"] }}</td>
+
+                            <td>{{ product["name"] }}</td>
+
+                            <td>{{ product["product_type"] }}</td>
+
+                            <td>
+                                ₹{{ "%.2f"|format(product["sales_price"]) }}
+                            </td>
+
+                            <td>
+                                ₹{{ "%.2f"|format(product["cost_price"]) }}
+                            </td>
+
+                            <td>
+
+                                {% if product["variants"] %}
+
+                                    {% for variant in product["variants"] %}
+
+                                        <div class="variant-item">
+                                            <strong>{{ variant["name"] }}</strong>
+                                            <span>
+                                                +₹{{ "%.2f"|format(variant["extra_price"]) }}
+                                            </span>
+                                        </div>
+
+                                    {% endfor %}
+
+                                {% else %}
+
+                                    <span class="no-variant">No variants</span>
+
+                                {% endif %}
+
+                            </td>
+
+                        </tr>
+
+                        {% else %}
+
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                No products added yet. Create your first product!
+                            </td>
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+</body>
+</html>
