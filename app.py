@@ -1,3 +1,5 @@
+import calendar
+from datetime import date, timedelta
 import math
 import sqlite3
 from datetime import date
@@ -923,6 +925,596 @@ def update_subscription_status(subscription_id):
 
     return redirect(
         url_for("subscriptions", updated="1")
+    )
+    # =====================================
+# BILLING DATE HELPERS
+# =====================================
+
+def add_months(start_date, months):
+    """Add calendar months while keeping dates valid."""
+
+    month_index = start_date.month - 1 + months
+
+    year = start_date.year + month_index // 12
+
+    month = month_index % 12 + 1
+
+    day = min(
+        start_date.day,
+        calendar.monthrange(year, month)[1]
+    )
+
+    return date(year, month, day)
+
+
+def get_period_end(start_date, frequency):
+    """Calculate the inclusive end date of a billing period."""
+
+    if frequency == "daily":
+        next_date = start_date + timedelta(days=1)
+
+    elif frequency == "weekly":
+        next_date = start_date + timedelta(days=7)
+
+    elif frequency == "monthly":
+        next_date = add_months(start_date, 1)
+
+    elif frequency == "yearly":
+        next_date = add_months(start_date, 12)
+
+    else:
+        raise ValueError("Unsupported billing frequency")
+
+    return next_date - timedelta(days=1)
+
+
+def get_next_billing_date(connection, subscription):
+    """Find the next billing date for a subscription."""
+
+    last_invoice = connection.execute("""
+        SELECT billing_period_end
+        FROM invoices
+        WHERE subscription_id = ?
+        ORDER BY billing_period_end DESC
+        LIMIT 1
+    """, (subscription["id"],)).fetchone()
+
+    if last_invoice:
+
+        return (
+            date.fromisoformat(last_invoice["billing_period_end"])
+            + timedelta(days=1)
+        )
+
+    return date.fromisoformat(subscription["start_date"])
+
+
+# =====================================
+# FIND SUBSCRIPTIONS DUE FOR BILLING
+# =====================================
+
+def find_due_subscriptions(connection, today):
+
+    active_subscriptions = connection.execute("""
+        SELECT
+            s.*,
+            c.name AS customer_name,
+            p.name AS plan_name,
+            p.billing_frequency
+
+        FROM subscriptions s
+
+        JOIN customers c
+        ON c.id = s.customer_id
+
+        JOIN subscription_plans p
+        ON p.id = s.plan_id
+
+        WHERE s.status = 'Active'
+
+        ORDER BY s.id
+    """).fetchall()
+
+    due_list = []
+
+    for subscription in active_subscriptions:
+
+        next_date = get_next_billing_date(
+            connection,
+            subscription
+        )
+
+        expiry_date = date.fromisoformat(
+            subscription["expiry_date"]
+        )
+
+        if next_date <= today and next_date <= expiry_date:
+
+            due_list.append({
+                "subscription_number":
+                    subscription["subscription_number"],
+
+                "customer_name":
+                    subscription["customer_name"],
+
+                "plan_name":
+                    subscription["plan_name"],
+
+                "next_due_date":
+                    next_date.isoformat()
+            })
+
+    return due_list
+    # =====================================
+# INVOICE MANAGEMENT PAGE
+# =====================================
+
+@app.route("/invoices")
+def invoices():
+
+    connection = get_db_connection()
+
+    try:
+
+        invoice_list = connection.execute("""
+            SELECT
+                i.*,
+                c.name AS customer_name,
+                c.email AS customer_email,
+                s.subscription_number
+
+            FROM invoices i
+
+            JOIN customers c
+            ON c.id = i.customer_id
+
+            JOIN subscriptions s
+            ON s.id = i.subscription_id
+
+            ORDER BY i.id DESC
+        """).fetchall()
+
+        today = date.today()
+
+        due_subscriptions = find_due_subscriptions(
+            connection,
+            today
+        )
+
+        total_outstanding = connection.execute("""
+            SELECT COALESCE(SUM(total_amount), 0) AS total
+            FROM invoices
+            WHERE status = 'Confirmed'
+              AND due_date >= ''
+        """).fetchone()["total"]
+
+        overdue_total = connection.execute("""
+            SELECT COALESCE(SUM(total_amount), 0) AS total
+            FROM invoices
+            WHERE status = 'Confirmed'
+              AND due_date < ?
+        """, (today.isoformat(),)).fetchone()["total"]
+
+    finally:
+        connection.close()
+
+    return render_template(
+        "invoices.html",
+        invoices=invoice_list,
+        due_subscriptions=due_subscriptions,
+        total_outstanding=total_outstanding,
+        overdue_total=overdue_total,
+        today=today.isoformat(),
+        generated=request.args.get("generated"),
+        message=request.args.get("message"),
+        error=request.args.get("error")
+    )
+
+
+# =====================================
+# GENERATE ALL DUE INVOICES
+# =====================================
+
+@app.route("/billing/generate", methods=["POST"])
+def generate_due_invoices():
+
+    connection = get_db_connection()
+
+    created_count = 0
+
+    today = date.today()
+
+    try:
+
+        # Find all active subscriptions
+        active_subscriptions = connection.execute("""
+            SELECT
+                s.*,
+                p.name AS plan_name,
+                p.billing_frequency
+
+            FROM subscriptions s
+
+            JOIN subscription_plans p
+            ON p.id = s.plan_id
+
+            WHERE s.status = 'Active'
+
+            ORDER BY s.id
+        """).fetchall()
+
+        # Process every due subscription
+        for subscription in active_subscriptions:
+
+            expiry_date = date.fromisoformat(
+                subscription["expiry_date"]
+            )
+
+            # Catch up on any missed billing periods
+            while True:
+
+                period_start = get_next_billing_date(
+                    connection,
+                    subscription
+                )
+
+                if period_start > today or period_start > expiry_date:
+                    break
+
+                period_end = get_period_end(
+                    period_start,
+                    subscription["billing_frequency"]
+                )
+
+                # Do not bill after subscription expiry
+                if period_end > expiry_date:
+                    period_end = expiry_date
+
+                period_start_text = period_start.isoformat()
+                period_end_text = period_end.isoformat()
+
+                # Check for an existing invoice
+                existing = connection.execute("""
+                    SELECT id
+                    FROM invoices
+                    WHERE subscription_id = ?
+                      AND billing_period_start = ?
+                """, (
+                    subscription["id"],
+                    period_start_text
+                )).fetchone()
+
+                if existing:
+                    continue
+
+                # Retrieve subscription product lines
+                lines = connection.execute("""
+                    SELECT
+                        sl.*,
+                        p.name AS product_name,
+                        v.variant_name
+
+                    FROM subscription_lines sl
+
+                    JOIN products p
+                    ON p.id = sl.product_id
+
+                    LEFT JOIN product_variants v
+                    ON v.id = sl.variant_id
+
+                    WHERE sl.subscription_id = ?
+
+                    ORDER BY sl.id
+                """, (subscription["id"],)).fetchall()
+
+                # Calculate plan and product charges
+                invoice_items = []
+
+                # Use the subscription's existing product tax rate
+                # for the recurring plan fee.
+                plan_tax_rate = (
+                    float(lines[0]["tax_rate"])
+                    if lines else 0
+                )
+
+                plan_price = float(subscription["plan_price"])
+
+                plan_tax = round(
+                    plan_price * plan_tax_rate / 100, 2
+                )
+
+                invoice_items.append({
+                    "description": (
+                        f"{subscription['plan_name']} "
+                        f"({subscription['billing_frequency']} plan)"
+                    ),
+                    "quantity": 1,
+                    "unit_price": plan_price,
+                    "tax_rate": plan_tax_rate,
+                    "line_subtotal": plan_price,
+                    "tax_amount": plan_tax
+                })
+
+                for line in lines:
+
+                    quantity = int(line["quantity"])
+
+                    unit_price = float(line["unit_price"])
+
+                    tax_rate = float(line["tax_rate"])
+
+                    line_subtotal = round(
+                        quantity * unit_price, 2
+                    )
+
+                    line_tax = round(
+                        line_subtotal * tax_rate / 100, 2
+                    )
+
+                    description = line["product_name"]
+
+                    if line["variant_name"]:
+                        description += (
+                            " - " + line["variant_name"]
+                        )
+
+                    invoice_items.append({
+                        "description": description,
+                        "quantity": quantity,
+                        "unit_price": unit_price,
+                        "tax_rate": tax_rate,
+                        "line_subtotal": line_subtotal,
+                        "tax_amount": line_tax
+                    })
+
+                subtotal = round(
+                    sum(item["line_subtotal"] for item in invoice_items),
+                    2
+                )
+
+                tax_amount = round(
+                    sum(item["tax_amount"] for item in invoice_items),
+                    2
+                )
+
+                total_amount = round(
+                    subtotal + tax_amount, 2
+                )
+
+                invoice_date = period_start
+
+                due_date = (
+                    invoice_date
+                    + timedelta(days=subscription["payment_terms_days"])
+                )
+
+                # Start an atomic invoice transaction
+                connection.execute("SAVEPOINT create_invoice")
+
+                try:
+
+                    cursor = connection.execute("""
+                        INSERT INTO invoices (
+                            invoice_number,
+                            subscription_id,
+                            customer_id,
+                            billing_period_start,
+                            billing_period_end,
+                            invoice_date,
+                            due_date,
+                            subtotal,
+                            tax_amount,
+                            total_amount,
+                            status
+                        )
+                        VALUES (
+                            NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft'
+                        )
+                    """, (
+                        subscription["id"],
+                        subscription["customer_id"],
+                        period_start_text,
+                        period_end_text,
+                        invoice_date.isoformat(),
+                        due_date.isoformat(),
+                        subtotal,
+                        tax_amount,
+                        total_amount
+                    ))
+
+                    invoice_id = cursor.lastrowid
+
+                    invoice_number = f"INV-{invoice_id:05d}"
+
+                    connection.execute("""
+                        UPDATE invoices
+                        SET invoice_number = ?
+                        WHERE id = ?
+                    """, (invoice_number, invoice_id))
+
+                    for item in invoice_items:
+
+                        connection.execute("""
+                            INSERT INTO invoice_lines (
+                                invoice_id,
+                                description,
+                                quantity,
+                                unit_price,
+                                tax_rate,
+                                line_subtotal,
+                                tax_amount,
+                                line_total
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            invoice_id,
+                            item["description"],
+                            item["quantity"],
+                            item["unit_price"],
+                            item["tax_rate"],
+                            item["line_subtotal"],
+                            item["tax_amount"],
+                            round(
+                                item["line_subtotal"]
+                                + item["tax_amount"], 2
+                            )
+                        ))
+
+                    connection.execute(
+                        "RELEASE SAVEPOINT create_invoice"
+                    )
+
+                    created_count += 1
+
+                except sqlite3.IntegrityError:
+
+                    connection.execute(
+                        "ROLLBACK TO SAVEPOINT create_invoice"
+                    )
+
+                    connection.execute(
+                        "RELEASE SAVEPOINT create_invoice"
+                    )
+
+                # The next loop finds the next unbilled period.
+
+        connection.commit()
+
+    except Exception:
+
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+    return redirect(
+        url_for("invoices", generated=created_count)
+    )
+
+
+# =====================================
+# CONFIRM / CANCEL / MARK SENT
+# =====================================
+
+@app.route(
+    "/invoices/<int:invoice_id>/action",
+    methods=["POST"]
+)
+def invoice_action(invoice_id):
+
+    action = request.form.get("action", "")
+
+    connection = get_db_connection()
+
+    error = None
+
+    try:
+
+        invoice = connection.execute("""
+            SELECT *
+            FROM invoices
+            WHERE id = ?
+        """, (invoice_id,)).fetchone()
+
+        if not invoice:
+
+            error = "Invoice not found."
+
+        elif action == "confirm" and invoice["status"] == "Draft":
+
+            connection.execute("""
+                UPDATE invoices
+                SET status = 'Confirmed'
+                WHERE id = ?
+            """, (invoice_id,))
+
+        elif action == "cancel" and invoice["status"] in (
+            "Draft", "Confirmed"
+        ):
+
+            connection.execute("""
+                UPDATE invoices
+                SET status = 'Cancelled'
+                WHERE id = ?
+            """, (invoice_id,))
+
+        elif action == "mark_sent" and invoice["status"] in (
+            "Draft", "Confirmed"
+        ):
+
+            connection.execute("""
+                UPDATE invoices
+                SET sent_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (invoice_id,))
+
+        else:
+
+            error = "This invoice action is not allowed."
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+    if error:
+        return redirect(
+            url_for("invoices", error=error)
+        )
+
+    return redirect(
+        url_for("invoices", message="Invoice updated successfully.")
+    )
+
+
+# =====================================
+# PRINT INVOICE
+# =====================================
+
+@app.route("/invoices/<int:invoice_id>/print")
+def print_invoice(invoice_id):
+
+    connection = get_db_connection()
+
+    try:
+
+        invoice = connection.execute("""
+            SELECT
+                i.*,
+                c.name AS customer_name,
+                c.email AS customer_email,
+                c.company AS customer_company,
+                c.phone AS customer_phone,
+                s.subscription_number
+
+            FROM invoices i
+
+            JOIN customers c
+            ON c.id = i.customer_id
+
+            JOIN subscriptions s
+            ON s.id = i.subscription_id
+
+            WHERE i.id = ?
+        """, (invoice_id,)).fetchone()
+
+        if not invoice:
+            return "Invoice not found.", 404
+
+        lines = connection.execute("""
+            SELECT *
+            FROM invoice_lines
+            WHERE invoice_id = ?
+        """, (invoice_id,)).fetchall()
+
+    finally:
+        connection.close()
+
+    return render_template(
+        "invoice_print.html",
+        invoice=invoice,
+        lines=lines
     )
 if __name__ == "__main__":
 
