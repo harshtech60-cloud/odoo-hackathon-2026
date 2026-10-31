@@ -12,6 +12,7 @@ def get_db_connection():
 
     # Allow us to access columns using their names
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
 
     return connection
 
