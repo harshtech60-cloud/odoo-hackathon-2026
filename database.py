@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 # Keep the database in the main project folder
-DB_PATH = Path(__file__).resolve().parent / "database.db"
+DB_PATH = Path(__file__).resolve().parent / "database.db
 
 
 def get_db_connection():
