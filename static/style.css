@@ -1,0 +1,202 @@
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    color: #1e293b;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+
+.sidebar {
+    width: 245px;
+    background: #172554;
+    color: white;
+    padding: 28px 18px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.brand h2 {
+    letter-spacing: 1px;
+    margin-bottom: 7px;
+}
+
+.brand p {
+    color: #cbd5e1;
+    font-size: 13px;
+    margin-bottom: 35px;
+}
+
+nav a {
+    display: block;
+    padding: 13px;
+    margin-bottom: 7px;
+    color: #dbeafe;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+nav a:hover,
+nav a.active {
+    background: #2563eb;
+    color: white;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: 30px;
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+/* Main dashboard */
+
+.main {
+    flex: 1;
+    padding: 35px;
+    min-width: 0;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 35px;
+}
+
+.topbar p {
+    color: #64748b;
+    margin-top: 8px;
+}
+
+.admin {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.avatar {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    background: #2563eb;
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+}
+
+/* Statistics cards */
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px #00000008;
+}
+
+.card p {
+    color: #64748b;
+    font-size: 14px;
+    margin-bottom: 17px;
+}
+
+.card h2 {
+    font-size: 30px;
+    margin-bottom: 10px;
+}
+
+.card small {
+    color: #94a3b8;
+}
+
+/* Welcome section */
+
+.welcome {
+    background: white;
+    padding: 30px;
+    margin-top: 25px;
+    border-radius: 12px;
+}
+
+.welcome p {
+    margin-top: 12px;
+    color: #64748b;
+    line-height: 1.7;
+}
+
+/* Quick actions */
+
+.quick-actions {
+    margin-top: 30px;
+}
+
+.quick-actions h2 {
+    margin-bottom: 18px;
+}
+
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+button {
+    padding: 16px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+/* Responsive design */
+
+@media (max-width: 700px) {
+
+    .layout {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+    }
+
+    .main {
+        padding: 20px;
+    }
+
+    .cards,
+    .action-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .topbar {
+        align-items: flex-start;
+        gap: 15px;
+    }
+}
