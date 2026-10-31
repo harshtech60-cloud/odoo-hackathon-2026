@@ -1,240 +1,100 @@
 # Brightloop — Subscription Management System
 
 <p align="center">
-  <strong>A Unified Platform for Subscription Management & Recurring Billing</strong>
+  <strong>A Unified Modern React Platform for Subscription Management & Recurring Billing</strong>
 </p>
 
-## About the Project
+## About Brightloop
 
-**Brightloop Subscription Manager** is a subscription management platform developed as part of the **Odoo × FLUX Hackathon**.
+**Brightloop Subscription Manager** is an enterprise subscription lifecycle and billing management platform originally designed for the **Odoo × FLUX Hackathon** and rebuilt as a high-performance modern React application.
 
-The project aims to simplify and automate the complete subscription lifecycle for businesses — from managing customers and creating subscription plans to generating invoices, tracking payments and monitoring recurring revenue.
-
-Our proposed solution brings essential business operations into one centralized dashboard, reducing manual work, minimizing billing errors and making financial information easier to manage.
-
-## The Problem
-
-Businesses that operate on subscription models often face challenges such as:
-
-- Managing customer subscriptions through spreadsheets.
-- Missing subscription renewals and expiry dates.
-- Creating recurring invoices manually.
-- Matching payments with invoices.
-- Managing discounts, taxes and product pricing.
-- Preparing revenue reports manually.
-- Tracking outstanding and overdue payments.
-
-These disconnected processes consume time and make it difficult for businesses to understand their actual recurring revenue.
-
-## Our Solution
-
-Brightloop aims to provide a centralized system where administrators and staff can manage subscription operations efficiently while customers can access their own subscription and invoice information.
-
-The platform is designed around a connected workflow:
-
-**Customer → Product → Plan → Subscription → Invoice → Payment → Revenue Report**
-
-## Key Modules
-
-The application is planned to include the following modules:
-
-### 1. User Management
-- Customer registration and login.
-- Role-based access control.
-- Admin, Staff and Customer roles.
-- Secure password handling.
-- Password reset functionality.
-
-### 2. Product & Plan Management
-- Create and manage products.
-- Configure product types, prices and variants.
-- Set minimum quantities.
-- Create daily, weekly, monthly and yearly billing plans.
-- Configure plan availability and renewal options.
-
-### 3. Subscription Management
-- Create and manage customer subscriptions.
-- Generate quotations using templates.
-- Track subscription status.
-- Support confirmation, activation, pausing, renewal and closure.
-- Monitor subscription start and expiry dates.
-
-### 4. Invoice & Billing Management
-- Generate invoices from subscriptions.
-- Calculate product quantities, taxes and totals.
-- Manage invoice statuses.
-- Prevent duplicate billing.
-- View and print invoices.
-
-### 5. Discount Management
-- Configure fixed and percentage-based discounts.
-- Set minimum purchase or quantity requirements.
-- Define discount validity periods.
-- Apply eligible discounts automatically during billing.
-- Enforce discount usage limits.
-
-### 6. Payment Management
-- Record payments against invoices.
-- Support different payment methods.
-- Track paid and outstanding amounts.
-- Identify overdue invoices.
-
-### 7. Reports & Analytics
-- Monitor active subscriptions.
-- Track monthly recurring revenue (MRR).
-- Calculate annual recurring revenue (ARR).
-- Monitor collected revenue and outstanding dues.
-- View overdue invoices.
-- Filter and analyse business performance.
-
-## Technology Stack
-
-| Technology | Purpose |
-|---|---|
-| Python | Application logic |
-| Flask | Backend web framework |
-| SQLite | Database management |
-| HTML5 | Web page structure |
-| CSS3 | User interface and styling |
-| JavaScript | Additional frontend interactions, where needed |
-| Git & GitHub | Version control and team collaboration |
-
-## Project Structure
-
-```text
-odoo-hackathon-2026/
-│
-├── app.py
-├── database.py
-├── requirements.txt
-├── README.md
-├── .gitignore
-│
-├── templates/
-│   ├── dashboard.html
-│   ├── customers.html
-│   ├── products.html
-│   ├── plans.html
-│   ├── subscriptions.html
-│   ├── invoices.html
-│   ├── payments.html
-│   ├── discounts.html
-│   └── reports.html
-│
-└── static/
-    └── style.css
-```
-
-*The structure above represents the planned project organization. Additional files and modules may be added during development.*
-
-## Getting Started
-
-Follow these steps to run the project locally.
-
-### Prerequisites
-
-Make sure you have installed:
-
-- Python 3
-- Git
-- Visual Studio Code (recommended)
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/harshtech60-cloud/odoo-hackathon-2026.git
-```
-
-### 2. Navigate to the Project Folder
-
-```bash
-cd odoo-hackathon-2026
-```
-
-### 3. Create a Virtual Environment
-
-```bash
-python3 -m venv .venv
-```
-
-### 4. Activate the Virtual Environment
-
-For macOS and Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-For Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-### 5. Install Dependencies
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-### 6. Run the Application
-
-```bash
-python app.py
-```
-
-### 7. Open in Your Browser
-
-Visit:
-
-```text
-http://127.0.0.1:5000/
-```
-
-**Note:** The application requires its Flask routes and corresponding HTML templates to be present before all pages can run successfully.
-
-## Team Collaboration
-
-This project is developed by a two-member team.
-
-| Team Member | Primary Responsibility |
-|---|---|
-| Suraj | Frontend Development, UI/UX and HTML/CSS |
-| Harsh | Backend Development, Python, Flask and Database |
-
-Both members collaborate on integration, testing, debugging and project documentation.
-
-GitHub is used for version control and sharing project updates.
-
-## Development Roadmap
-
-The project is being developed incrementally, following this planned sequence:
-
-- [ ] Initial project setup and Flask configuration
-- [ ] Dashboard interface
-- [ ] Customer management
-- [ ] Product and plan management
-- [ ] Subscription lifecycle management
-- [ ] Invoice generation and tax calculations
-- [ ] Discount management
-- [ ] Payment tracking
-- [ ] Reports and analytics
-- [ ] User authentication and role-based permissions
-- [ ] Integration testing and performance improvements
-
-## Project Objective
-
-Our objective is to develop a practical, scalable and user-friendly subscription management platform that reduces manual business operations and brings recurring billing activities into one unified system.
-
-We aim to make subscription management simpler, more transparent and more efficient for businesses.
+It automates and centralizes business operations:
+**Customer → Product & Variants → Plan → Subscription Lifecycle → Recurring Invoicing → Payment Matching → Financial Reporting → Customer Self-Service Portal**
 
 ---
 
-**Project:** Brightloop — Subscription Management System  
-**Event:** Odoo × FLUX Hackathon  
-**Status:** Under Development  
-**Team Size:** 2 Members
+## Key Modules & Features
 
-<p align="center">
-  <strong>Built with curiosity, collaboration and code.</strong>
-</p>
+### 1. Dashboard Overview
+- Real-time KPIs: Total Customers, Monthly Recurring Revenue (MRR), Payments Received, and Outstanding Receivables.
+- Subscription status breakdown pipeline (Active, Confirmed, Quotation, Draft, Paused, Closed).
+- Recent invoices ledger with quick status tracking.
+- One-click shortcuts for primary operational workflows.
+
+### 2. Customer Management
+- Register and maintain corporate accounts, individual accounts, contact emails, and phone numbers.
+- Real-time instant search across customer names, emails, and company names.
+- Client ID tagging and creation audit trail.
+
+### 3. Product & Variant Catalog
+- Define products with sales prices, cost prices, profit margins, and licensing types.
+- Configurable SKU variants with item-specific extra pricing.
+
+### 4. Subscription Plans
+- Flexible billing cadences: Daily, Weekly, Monthly, and Yearly.
+- Minimum order quantity enforcement.
+- Configurable availability windows (From / Until).
+- Fine-grained lifecycle policy toggles: Pausing allowed, Early cancellation allowed, Auto-renewal, and Expiry auto-closure.
+
+### 5. Subscription Lifecycle
+- Full status state machine:
+  `Draft` → `Quotation` → `Confirmed` → `Active` ⇄ `Paused` → `Closed`
+- Line items with product variants, quantities, and customizable tax rates.
+- Contract renewal functionality extending subscriptions by 12 months.
+
+### 6. Automated Periodic Billing Engine
+- Detects unbilled periods according to plan cadence.
+- Evaluates active promotional discount rules automatically.
+- Generates itemized tax invoices with line subtotals, tax distributions, and discount savings.
+- Prevents duplicate invoice issuance for already-billed periods.
+- Full-screen printable Tax Invoice view with clean print styling.
+
+### 7. Payment Transactions & Matching
+- Record payments against confirmed outstanding invoices with real-time balance validation.
+- Multiple settlement channels: Bank Transfer (ACH / NEFT), UPI, Card, Cash, and Other Gateways.
+- Automated status progression to `Paid` once full invoice balance is collected.
+- Payment performance indicators: Settled Collections, Pending Clearances, Failed Transactions.
+
+### 8. Discount & Promotional Rules
+- Percentage (%) or Fixed Amount ($) discounts.
+- Minimum order value and minimum quantity requirements.
+- Target entire subscription or restrict to a specific product SKU.
+- Maximum discount cap ceilings and usage limits with redemption counters.
+- Quick toggle for active/inactive status and safe deletion of unused codes.
+
+### 9. Reports & Financial Analytics
+- Annual Recurring Revenue (ARR) and Monthly Recurring Revenue (MRR) metrics.
+- All-time collected revenue and uncollected receivables.
+- 12-month revenue trajectory visualization.
+- Subscription status distributions and payment method breakdown.
+
+### 10. Customer Self-Service Portal
+- Client portal allowing customers to view their active subscriptions and issued invoices.
+- Self-service controls to pause, resume, or close contracts.
+- Online payment simulation and printable tax invoice viewer.
+
+---
+
+## Tech Stack
+
+- **Runtime**: Node.js 22
+- **Framework**: React 19 + TypeScript
+- **Bundler**: Vite 6
+- **Styling**: Tailwind CSS v4
+- **Icons**: Lucide React
+- **Persistence**: LocalStorage with demo data reset capability
+
+---
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+```
