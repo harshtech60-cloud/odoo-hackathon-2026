@@ -142,7 +142,7 @@ Make sure you have installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/harshstech60-cloud/odoo-hackathon-2026.git
+git clone https://github.com/harshtech60-cloud/odoo-hackathon-2026.git
 ```
 
 ### 2. Navigate to the Project Folder
