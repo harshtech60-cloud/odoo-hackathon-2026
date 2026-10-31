@@ -1,0 +1,367 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brightloop | Invoices & Billing</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <h2>BRIGHTLOOP</h2>
+            <p>Subscription Manager</p>
+        </div>
+
+        <nav>
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('customers') }}">Customers</a>
+            <a href="{{ url_for('products') }}">Products</a>
+            <a href="{{ url_for('plans') }}">Plans</a>
+            <a href="{{ url_for('subscriptions') }}">Subscriptions</a>
+            <a class="active" href="{{ url_for('invoices') }}">Invoices</a>
+            <a href="#">Payments</a>
+            <a href="#">Discounts</a>
+            <a href="#">Reports</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Odoo × FLUX Hackathon</p>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div>
+                <h1>Invoice & Billing Management</h1>
+                <p>Generate recurring invoices and track billing.</p>
+            </div>
+
+            <a href="{{ url_for('dashboard') }}" class="back-link">
+                ← Dashboard
+            </a>
+
+        </header>
+
+
+        <!-- Messages -->
+
+        {% if message %}
+
+        <div class="success-message">
+            {{ message }}
+        </div>
+
+        {% endif %}
+
+        {% if generated is not none %}
+
+        <div class="success-message">
+            Billing process completed. {{ generated }} new invoice(s) generated.
+        </div>
+
+        {% endif %}
+
+        {% if error %}
+
+        <div class="error-message">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <!-- Billing Summary -->
+
+        <section class="billing-summary">
+
+            <div class="billing-stat">
+                <p>Subscriptions Due Today</p>
+                <h2>{{ due_subscriptions|length }}</h2>
+                <small>Active subscriptions awaiting billing</small>
+            </div>
+
+            <div class="billing-stat">
+                <p>Outstanding Invoices</p>
+                <h2>₹{{ "%.2f"|format(total_outstanding) }}</h2>
+                <small>Confirmed and unpaid invoices</small>
+            </div>
+
+            <div class="billing-stat">
+                <p>Overdue Amount</p>
+                <h2>₹{{ "%.2f"|format(overdue_total) }}</h2>
+                <small>Past their payment due date</small>
+            </div>
+
+        </section>
+
+
+        <!-- Billing Control Center -->
+
+        <section class="billing-control">
+
+            <div class="section-heading">
+
+                <h2>Billing Control Center</h2>
+
+                <p>
+                    Generate invoices for all active subscriptions
+                    whose billing dates have arrived.
+                </p>
+
+            </div>
+
+
+            {% if due_subscriptions %}
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th>Subscription</th>
+                            <th>Customer</th>
+                            <th>Plan</th>
+                            <th>Next Billing Date</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                        {% for sub in due_subscriptions %}
+
+                        <tr>
+                            <td>{{ sub["subscription_number"] }}</td>
+                            <td>{{ sub["customer_name"] }}</td>
+                            <td>{{ sub["plan_name"] }}</td>
+                            <td>{{ sub["next_due_date"] }}</td>
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            {% else %}
+
+            <div class="empty-billing">
+                <h3>No subscriptions are due for billing.</h3>
+                <p>All active subscriptions are up to date.</p>
+            </div>
+
+            {% endif %}
+
+
+            <form method="POST"
+                  action="{{ url_for('generate_due_invoices') }}"
+                  onsubmit="return confirm('Generate all due invoices? This process will check for duplicate billing before creating invoices.');">
+
+                <button type="submit" class="primary-button">
+                    Generate Due Invoices
+                </button>
+
+            </form>
+
+        </section>
+
+
+        <!-- Invoice Directory -->
+
+        <section class="invoice-table-section">
+
+            <div class="section-heading">
+
+                <h2>Invoice Directory</h2>
+
+                <p>
+                    View, confirm, cancel and print generated invoices.
+                </p>
+
+            </div>
+
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th>Invoice Number</th>
+                            <th>Customer</th>
+                            <th>Subscription</th>
+                            <th>Invoice Date</th>
+                            <th>Due Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+
+
+                    <tbody>
+
+                        {% for invoice in invoices %}
+
+                        <tr>
+
+                            <td>
+                                <strong>{{ invoice["invoice_number"] }}</strong>
+                            </td>
+
+                            <td>{{ invoice["customer_name"] }}</td>
+
+                            <td>{{ invoice["subscription_number"] }}</td>
+
+                            <td>{{ invoice["invoice_date"] }}</td>
+
+                            <td>
+                                {{ invoice["due_date"] }}
+
+                                {% if invoice["status"] == "Confirmed"
+                                      and invoice["due_date"] < today %}
+
+                                    <small class="overdue-label">
+                                        Overdue
+                                    </small>
+
+                                {% endif %}
+                            </td>
+
+                            <td>
+                                ₹{{ "%.2f"|format(invoice["total_amount"]) }}
+                            </td>
+
+                            <td>
+
+                                <span class="status-badge status-{{ invoice['status']|lower }}">
+                                    {{ invoice["status"] }}
+                                </span>
+
+                                {% if invoice["sent_at"] %}
+                                    <small class="sent-label">Sent</small>
+                                {% endif %}
+
+                            </td>
+
+                            <td>
+
+                                <div class="invoice-actions">
+
+                                    <a
+                                        href="{{ url_for('print_invoice', invoice_id=invoice['id']) }}"
+                                        target="_blank"
+                                        class="small-action-link">
+                                        Print
+                                    </a>
+
+
+                                    {% if invoice["status"] == "Draft" %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="confirm">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Confirm
+                                        </button>
+
+                                    </form>
+
+                                    {% endif %}
+
+
+                                    {% if invoice["status"] in ["Draft", "Confirmed"] %}
+
+                                    {% if not invoice["sent_at"] %}
+
+                                    <form method="POST"
+                                          action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="mark_sent">
+
+                                        <button type="submit"
+                                                class="small-action-button">
+                                            Mark Sent
+                                        </button>
+
+                                    </form>
+
+                                    {% endif %}
+
+
+                                    <form method="POST"
+                                          action="{{ url_for('invoice_action', invoice_id=invoice['id']) }}"
+                                          onsubmit="return confirm('Cancel this invoice?');">
+
+                                        <input type="hidden"
+                                               name="action"
+                                               value="cancel">
+
+                                        <button type="submit"
+                                                class="small-danger-button">
+                                            Cancel
+                                        </button>
+
+                                    </form>
+
+                                    {% endif %}
+
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+
+                        {% else %}
+
+                        <tr>
+                            <td colspan="8" class="empty-state">
+                                No invoices generated yet.
+                            </td>
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+</body>
+</html>
